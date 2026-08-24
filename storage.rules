@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// Devasriya Print - Cloud Storage security rules
+//
+// MODULE 0 BASELINE: deny everything.
+//
+// Design files, artwork proofs and job attachments get their own rules when
+// the design upload / approval module is implemented.
+// ---------------------------------------------------------------------------
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
