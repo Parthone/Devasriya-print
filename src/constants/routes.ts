@@ -10,6 +10,7 @@ import {
   MessageSquareText,
   Ruler,
   Settings,
+  UserCog,
   Users,
   Wallet,
   type LucideIcon,
@@ -32,6 +33,7 @@ export const ROUTES = {
   inventory: '/inventory',
   reports: '/reports',
   settings: '/settings',
+  users: '/settings/users',
   forbidden: '/forbidden',
 } as const;
 
@@ -43,6 +45,8 @@ export interface NavItem {
   icon: LucideIcon;
   /** False until the module that owns this route is implemented. */
   enabled: boolean;
+  /** Only shown to owner and admin roles. */
+  adminOnly?: boolean;
 }
 
 export interface NavSection {
@@ -84,6 +88,13 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Business',
     items: [
       { label: 'Billing & Payments', path: ROUTES.billing, icon: Wallet, enabled: false },
+      {
+        label: 'Employees',
+        path: ROUTES.users,
+        icon: UserCog,
+        enabled: true,
+        adminOnly: true,
+      },
       { label: 'Reports', path: ROUTES.reports, icon: BarChart3, enabled: false },
       { label: 'Settings', path: ROUTES.settings, icon: Settings, enabled: false },
     ],

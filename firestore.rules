@@ -3,15 +3,91 @@ rules_version = '2';
 // ---------------------------------------------------------------------------
 // Devasriya Print - Firestore security rules
 //
-// MODULE 0 BASELINE: deny everything.
+// Baseline is deny-all. A collection is opened up only by the module that owns
+// it, together with the role model it depends on.
 //
-// Real rules are written per module, alongside the collections they protect.
-// A collection is only opened up once its module is implemented and its
-// role/permission model is defined (see the auth & permissions module).
-// Never relax this file to a blanket allow - not even temporarily.
+// Open collections:
+//   users  (Module 1 - Authentication & Users)
 // ---------------------------------------------------------------------------
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasProfile() {
+      return isSignedIn() && exists(userPath(request.auth.uid));
+    }
+
+    function myProfile() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    // Authentication alone grants nothing: a profile must exist and be active.
+    function isActiveUser() {
+      return hasProfile() && myProfile().isActive == true;
+    }
+
+    function isAdmin() {
+      return isActiveUser() && myProfile().role in ['owner', 'admin'];
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasOnly([
+               'name', 'email', 'mobile', 'designation', 'department', 'role',
+               'isActive', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+             ])
+             && data.keys().hasAll([
+               'name', 'email', 'mobile', 'designation', 'department', 'role',
+               'isActive', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+             ])
+             && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
+             && data.email is string && data.email.size() >= 5 && data.email.size() <= 200
+             && data.mobile is string && data.mobile.matches('^[6-9][0-9]{9}$')
+             && data.designation is string
+             && data.department is string
+             && data.role in ['owner', 'admin', 'sales', 'designer', 'production', 'accounts', 'viewer']
+             && data.isActive is bool
+             && data.createdBy is string
+             && data.updatedBy is string;
+    }
+
+    match /users/{userId} {
+      // A signed-in user may always read their own profile - the application
+      // needs it to tell "deactivated" apart from "no profile at all".
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isAdmin()
+                    && isValidProfile(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid;
+
+      // `resource` is null when Firestore evaluates the update branch for a
+      // write to a document that does not exist yet; guard so the rule returns
+      // false instead of raising an evaluation error.
+      allow update: if isAdmin()
+                    && resource != null
+                    && isValidProfile(request.resource.data)
+                    && request.resource.data.email == resource.data.email
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid
+                    // Administrators cannot demote or deactivate themselves and
+                    // lock the business out of its own software.
+                    && (request.auth.uid != userId
+                        || (request.resource.data.role == resource.data.role
+                            && request.resource.data.isActive == resource.data.isActive));
+
+      // Staff records are never deleted: history and audit trails depend on them.
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

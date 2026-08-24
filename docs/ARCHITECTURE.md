@@ -88,10 +88,28 @@ defence; feature-level boundaries can be nested inside it.
 - As features grow, register their routes with the React Router route-level
   `lazy` option so each module is code-split.
 
+## 6a. Authentication and sessions (Module 1)
+
+- `AuthProvider` owns the session and is the only place that decides who is let
+  in. `resolveSession` in `src/features/auth/session.ts` is the pure function
+  that makes that call, so the rule is unit tested directly: an account needs a
+  profile document, and that profile must be active.
+- Rejected sessions are signed out immediately and the reason is kept, so the
+  sign-in screen can explain what happened.
+- `useAuth` gives the session; `useAuthenticatedUser` is for code that only runs
+  inside a protected route.
+- Staff accounts are created through `UserAccountProvisioner`. The shipped
+  implementation uses a secondary Firebase app so the administrator session is
+  untouched; a Cloud Function implementation can replace it without changing the
+  user-management UI.
+- Passwords are never entered or seen by administrators - new employees get a
+  password setup email.
+
 ## 7. Security rules
 
-`firestore.rules` and `storage.rules` are **deny-all** until a module opens up
-its own collections, together with the role model it depends on. Rules are part
+`storage.rules` is deny-all, and `firestore.rules` denies everything except the
+collections a delivered module has opened up (currently `users`). A collection is
+opened only together with the role model it depends on. Rules are part
 of the definition of done for a module - not an afterthought. A blanket allow is
 never acceptable, including in development (use the emulators instead).
 

@@ -1,12 +1,13 @@
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
 
 import { ProtectedRoute } from '@/app/router/ProtectedRoute';
-import { ROUTES, NAV_SECTIONS } from '@/constants/routes';
+import { NAV_SECTIONS, ROUTES } from '@/constants/routes';
+import { LoginPage } from '@/features/auth/pages/LoginPage';
+import { UsersPage } from '@/features/users/pages/UsersPage';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ForbiddenPage } from '@/pages/ForbiddenPage';
-import { LoginPage } from '@/pages/LoginPage';
 import { ModuleComingSoonPage } from '@/pages/ModuleComingSoonPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 
@@ -34,6 +35,14 @@ export const routes: RouteObject[] = [
     children: [
       { path: ROUTES.root, element: <Navigate to={ROUTES.dashboard} replace /> },
       { path: ROUTES.dashboard, element: <DashboardPage /> },
+      {
+        path: ROUTES.users,
+        element: (
+          <ProtectedRoute requiresAdmin>
+            <UsersPage />
+          </ProtectedRoute>
+        ),
+      },
       ...placeholderRoutes,
       { path: ROUTES.forbidden, element: <ForbiddenPage /> },
       { path: '*', element: <NotFoundPage /> },

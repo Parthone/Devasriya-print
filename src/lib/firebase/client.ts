@@ -51,10 +51,16 @@ export function getFirebaseAuth(): Auth {
 
 export function getDb(): Firestore {
   if (!firestoreInstance) {
-    // Offline persistence keeps the shop floor usable through flaky connections.
-    firestoreInstance = initializeFirestore(getFirebaseApp(), {
-      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-    });
+    // Offline persistence keeps the shop floor usable through flaky
+    // connections. It needs IndexedDB, which does not exist in Node - there the
+    // SDK falls back to its in-memory cache.
+    const canPersist = typeof indexedDB !== 'undefined';
+    firestoreInstance = initializeFirestore(
+      getFirebaseApp(),
+      canPersist
+        ? { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }
+        : {},
+    );
     connectEmulatorsOnce({ firestore: firestoreInstance });
   }
   return firestoreInstance;

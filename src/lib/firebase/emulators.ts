@@ -19,6 +19,20 @@ const connected = {
   storage: false,
 };
 
+/**
+ * Connects a freshly created Auth instance to the emulator.
+ *
+ * Separate from `connectEmulatorsOnce` because secondary Firebase apps (used
+ * for account provisioning) create their own Auth instance, which needs its own
+ * connection even though the primary one is already connected.
+ */
+export function connectAuthEmulatorFor(auth: Auth): void {
+  if (!shouldUseEmulators()) return;
+  connectAuthEmulator(auth, `http://${EMULATOR_HOST}:${EMULATOR_PORTS.auth}`, {
+    disableWarnings: true,
+  });
+}
+
 interface ConnectTargets {
   auth?: Auth;
   firestore?: Firestore;

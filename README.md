@@ -8,8 +8,9 @@ Built as a real commercial application - React + TypeScript on the front end,
 Firebase (Authentication, Cloud Firestore, Cloud Storage, Hosting) on the back
 end, with an architecture that can move to Google Cloud services later.
 
-> **Status: Module 0 (Project Foundation) complete.** No business module has
-> been implemented yet. See [docs/MODULES.md](docs/MODULES.md) for the roadmap.
+> **Status: Modules 0-1 complete** - project foundation, and authentication with
+> employee account management. No other business module has been implemented
+> yet. See [docs/MODULES.md](docs/MODULES.md) for the roadmap.
 
 ---
 
@@ -78,7 +79,77 @@ and mirrored in `src/lib/firebase/emulators.ts`.
 | `npm run emulators`               | Firebase Emulator Suite                          |
 | `npm run verify`                  | typecheck + lint + format check + tests + build  |
 
-Run `npm run verify` before every commit.
+Run `npm run verify` before every commit. `test:rules` and `test:emulator` are
+run separately because they need the emulators (and therefore Java) running.
+
+## Accounts and sign-in
+
+Devasriya Print is staff-only software: **there is no public sign-up**. Every
+account is created by an owner or administrator from **Employees**
+(`/settings/users`), and each account has a Firestore profile at `users/{uid}`
+keyed to its Firebase Auth UID.
+
+Being signed in to Firebase is not enough to be signed in to the application.
+A session is only accepted when the profile document exists **and** its
+`isActive` flag is true; anything else is signed out immediately, on login and
+on session restore alike.
+
+### Creating the first owner
+
+The application can only create staff once an administrator is signed in, so the
+first account is created out of band with the Admin SDK.
+
+```bash
+# Real project - the service-account key is a secret, keep it outside the repo
+set GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
+npm run bootstrap:owner -- --email owner@yourbusiness.in --name "Owner Name" --mobile 9876543210 --project your-project-id
+```
+
+The script prints a password setup link for the owner. Never commit a
+service-account key - keep the file outside the repository entirely.
+
+### Creating employees
+
+An administrator fills in name, email, mobile, designation, department and role.
+The employee then receives an email to set their own password - **the
+administrator never sees or types a staff password**.
+
+Accounts are created client-side through a secondary Firebase app so that the
+administrator stays signed in. One consequence to be aware of: email/password
+sign-up remains enabled on the Firebase project, so an account could in
+principle be created outside this flow. Such an account has no profile document,
+and both the application and the Firestore rules reject it, so it grants access
+to nothing. Moving provisioning to a Cloud Function with the Admin SDK (which
+requires the Blaze plan) removes even that possibility - it means adding one
+implementation of `UserAccountProvisioner` and swapping a single binding in
+`src/features/users/services/provisioning/index.ts`.
+
+### Deactivating an employee
+
+Deactivation sets `isActive: false`. The employee is blocked by the application
+and by the security rules, and is signed out the moment the session is
+re-checked. Their Firebase Auth account still exists (the client SDK cannot
+disable it), so they can still authenticate - and are then rejected with a clear
+message before any data is loaded. Records are never deleted, so history stays
+intact.
+
+### Testing accounts in the emulators
+
+```bash
+npm run emulators        # terminal 1
+npm run seed:emulator    # terminal 2
+npm run dev              # terminal 3, with VITE_USE_FIREBASE_EMULATORS=true
+```
+
+| Email                     | Password       | What it exercises                 |
+| ------------------------- | -------------- | --------------------------------- |
+| `owner@devasriya.test`    | `Owner@12345`  | active owner, full access         |
+| `designer@devasriya.test` | `Design@12345` | active staff, no admin area       |
+| `inactive@devasriya.test` | `Inactive@123` | deactivated account               |
+| `ghost@devasriya.test`    | `Ghost@12345`  | authenticates, but has no profile |
+
+Password reset emails are not sent by the emulator - the reset link is printed
+in the emulator console instead.
 
 ## Project structure
 
@@ -90,15 +161,18 @@ src/
     common/     Shared application components
   config/       App constants and environment parsing
   constants/    Routes, navigation and the module roadmap
-  features/     One folder per business module (empty until Module 3)
+  features/
+    auth/       Sign-in, session, route guard plumbing (Module 1)
+    users/      Employee directory and account provisioning (Module 1)
   hooks/        Shared React hooks
   layouts/      App shell and auth shell
   lib/          Framework-level helpers
     firebase/   Firebase client, emulators, converters, error mapping
-  pages/        Shell-level pages (dashboard, sign-in, 404, 403)
+  pages/        Shell-level pages (dashboard, 404, 403)
   services/     Data-access layer built on Firestore
   styles/       Tailwind entry point and design tokens
   types/        Cross-cutting types
+scripts/        Admin SDK tooling: owner bootstrap, emulator seeding
 docs/           Architecture and module roadmap
 ```
 
@@ -112,7 +186,8 @@ npm run build
 npx firebase-tools deploy --only hosting
 ```
 
-Security rules are deployed separately and are currently **deny-all** by design:
+Security rules are deployed separately. Everything is denied except the `users`
+collection, which Module 1 opens up:
 
 ```bash
 npx firebase-tools deploy --only firestore:rules,storage:rules
@@ -127,6 +202,8 @@ rules that matter most:
    `src/services`. ESLint enforces this.
 2. Money is stored as integer paise (`src/lib/money.ts`), never as floating
    point rupees.
+3. Route access goes through `ProtectedRoute`; a role check in the UI is always
+   matched by a rule in `firestore.rules`.
 
 Locale is `en-IN`, currency is INR, and all dates are rendered in
 `Asia/Kolkata`.

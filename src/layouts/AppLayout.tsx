@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { APP_CONFIG } from '@/config/app.config';
 import { NAV_SECTIONS } from '@/constants/routes';
+import { UserMenu } from '@/features/auth/components/UserMenu';
+import { useAuth } from '@/features/auth/hooks/use-auth';
 import { cn } from '@/lib/utils';
 
 /**
@@ -17,6 +19,15 @@ import { cn } from '@/lib/utils';
  */
 export function AppLayout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const { session } = useAuth();
+  const isAdmin = session.status === 'authenticated' && session.user.isAdmin;
+
+  // Admin-only destinations are hidden from staff. The route guard enforces it;
+  // hiding the link keeps the sidebar honest about what a user can open.
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.adminOnly || isAdmin),
+  })).filter((section) => section.items.length > 0);
 
   const closeSidebar = () => {
     setSidebarOpen(false);
@@ -59,7 +70,7 @@ export function AppLayout() {
         </div>
 
         <nav aria-label="Main navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
-          {NAV_SECTIONS.map((section) => (
+          {sections.map((section) => (
             <div key={section.title} className="space-y-1">
               <p className="px-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 {section.title}
@@ -114,6 +125,7 @@ export function AppLayout() {
           <div className="flex-1" />
 
           <ThemeToggle />
+          <UserMenu />
         </header>
 
         <main id="main-content" className="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">

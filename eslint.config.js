@@ -70,11 +70,31 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
+      // Asserting on mocked methods pulled off an object is normal in tests.
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
+  {
+    // Security-rules tests drive the Firestore emulator through the SDK on
+    // purpose - they verify the deployed rules, not application behaviour.
+    files: ['**/*.rules.test.ts'],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
   {
     files: ['**/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
+    // Node scripts: developer tooling, not part of the browser bundle.
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended, tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: 'module',
+      globals: globals.node,
+    },
   },
   prettier,
 );

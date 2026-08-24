@@ -45,6 +45,8 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Security-rules tests need the Firestore emulator: npm run test:rules
+    exclude: ['src/**/*.rules.test.ts', 'src/**/*.e2e.test.ts', 'node_modules/**', 'dist/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

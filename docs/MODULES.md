@@ -63,12 +63,69 @@ the dashboard roadmap card and the placeholder pages - update both together.
 Every business module, real authentication logic, real security rules, CI/CD and
 deployment automation.
 
-## Next: Module 1 - Authentication & Users
+## Module 1 - Authentication & Users (delivered)
+
+**Authentication**
+
+- Firebase email/password sign-in with `browserLocalPersistence`, so a refresh
+  or a browser restart keeps the user signed in
+- Session restore gated behind a loader, so a signed-in user is never bounced to
+  the sign-in screen on refresh
+- Sign-out from the account menu in the app shell
+- Forgot-password flow that never reveals whether an address is registered
+
+**Who is allowed in**
+
+- `resolveSession` accepts a user only when a `users/{uid}` profile exists and
+  `isActive` is true; every other case is signed out with a clear reason
+- `ProtectedRoute` redirects unauthenticated users to `/login` (remembering where
+  they were headed) and non-administrators away from admin-only routes
+- Admin-only navigation is hidden from staff as well as blocked
+
+**Employee management** (`/settings/users`, owner and admin only)
+
+- Directory with search, showing designation, department, role and status
+- Add employee: name, email, mobile, designation, department, role
+- Edit employee; the sign-in email is immutable
+- Activate and deactivate, with confirmation; administrators cannot deactivate
+  or demote themselves
+- Resend the password setup email
+
+**Provisioning**
+
+- `UserAccountProvisioner` interface with a secondary-app implementation, so the
+  administrator session is never disturbed and staff passwords are never known
+  to anyone but the employee
+- Designed for a later Cloud Function + Admin SDK implementation without
+  touching the UI
+
+**Security rules**
+
+- `users` is readable by its owner, and by administrators for the directory
+- Only active administrators may create or update profiles, with field-level
+  validation (mobile pattern, known roles, no extra fields)
+- The sign-in email and creation audit fields are immutable
+- Administrators cannot change their own role or status
+- Profiles can never be deleted; every other collection stays denied
+
+**Tooling**
+
+- `scripts/bootstrap-owner.mjs` creates the first owner with the Admin SDK
+- `scripts/seed-emulator.mjs` seeds emulator accounts for manual testing
+- `npm run test:rules` and `npm run test:emulator` run the emulator suites
+
+**Known limitation**
+
+Client-side provisioning means email/password sign-up stays enabled on the
+Firebase project, and deactivation cannot disable the Auth account itself. Such
+accounts have no profile and are rejected by both the application and the rules,
+so they grant no access. A Cloud Function implementation (Blaze plan) closes it.
+
+## Next: Module 2 - Roles & Permissions
 
 Scope to be confirmed before implementation:
 
-- Email/password sign-in, sign-out and session restore
-- A `users` collection with profile documents and an `isActive` flag
-- `ProtectedRoute` redirecting unauthenticated users to `/login`
-- Current-user context and a user menu in the app shell
-- Firestore rules for the `users` collection
+- Permission catalogue per module and role
+- Permission checks in the UI (`ProtectedRoute` already accepts `requires`)
+- Firestore rules driven by the same role model
+- An audit trail of role and status changes
