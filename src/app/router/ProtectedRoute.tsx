@@ -4,17 +4,13 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { FullPageLoader } from '@/components/common/FullPageLoader';
 import { ROUTES } from '@/constants/routes';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import type { Permission } from '@/types/auth';
+import type { Permission } from '@/features/permissions/catalogue';
+import { hasAllPermissions } from '@/features/permissions/helpers';
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  /** Restricts the route to owner and admin roles. */
-  requiresAdmin?: boolean;
-  /**
-   * Granular permissions, enforced from Module 2. Declared now so routes can be
-   * annotated as they are built without another signature change.
-   */
-  requires?: Permission[];
+  /** Every one of these permissions is required to open the route. */
+  requires?: readonly Permission[];
 }
 
 /**
@@ -23,9 +19,10 @@ interface ProtectedRouteProps {
  * While the session is being restored nothing is rendered but a loader - that
  * avoids bouncing a signed-in user to the login screen on a page refresh.
  * Unauthenticated users are sent to /login with the path they wanted, so they
- * land back on it after signing in.
+ * land back on it after signing in. A signed-in user without the required
+ * permission gets /forbidden, whether they used the menu or typed the URL.
  */
-export function ProtectedRoute({ children, requiresAdmin = false }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, requires = [] }: ProtectedRouteProps) {
   const { session } = useAuth();
   const location = useLocation();
 
@@ -43,7 +40,7 @@ export function ProtectedRoute({ children, requiresAdmin = false }: ProtectedRou
     );
   }
 
-  if (requiresAdmin && !session.user.isAdmin) {
+  if (!hasAllPermissions(session.user.permissions, requires)) {
     return <Navigate to={ROUTES.forbidden} replace />;
   }
 

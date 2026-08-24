@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   updateEmployee: vi.fn(),
   resendPasswordSetupEmail: vi.fn(),
   signOutCurrentUser: vi.fn(),
+  listAuditEventsForUser: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
@@ -36,8 +37,14 @@ vi.mock('@/features/users/services/user-profile.service', () => ({
   setUserActive: mocks.setUserActive,
   createUserProfile: vi.fn(),
   updateUserProfile: vi.fn(),
-  changeUserRole: vi.fn(),
   userProfileRepository: {},
+}));
+
+vi.mock('@/features/audit/services/audit.service', () => ({
+  listAuditEventsForUser: mocks.listAuditEventsForUser,
+  listRecentAuditEvents: vi.fn(),
+  buildAuditDocument: vi.fn(),
+  auditRepository: {},
 }));
 
 vi.mock('@/features/users/services/employee.service', () => ({
@@ -118,7 +125,10 @@ beforeEach(() => {
   mocks.updateEmployee.mockResolvedValue(undefined);
   mocks.resendPasswordSetupEmail.mockResolvedValue(undefined);
   mocks.signOutCurrentUser.mockResolvedValue(undefined);
+  mocks.listAuditEventsForUser.mockResolvedValue([]);
 });
+
+const ACTOR = { uid: 'uid-owner', name: 'Owner Account' };
 
 describe('employee directory', () => {
   it('lists staff with their department, role and status', async () => {
@@ -170,7 +180,7 @@ describe('creating an employee', () => {
         mobile: '9876543210',
         isActive: true,
       }),
-      'uid-owner',
+      ACTOR,
     );
   });
 
@@ -208,15 +218,18 @@ describe('editing an employee', () => {
     await waitFor(() => {
       expect(mocks.updateEmployee).toHaveBeenCalledTimes(1);
     });
-    const [uid, changes, actorId] = mocks.updateEmployee.mock.calls[0] as [
+    const [uid, changes, previous, actor] = mocks.updateEmployee.mock.calls[0] as [
       string,
       Record<string, unknown>,
-      string,
+      UserProfile,
+      typeof ACTOR,
     ];
     expect(uid).toBe('uid-staff');
-    expect(actorId).toBe('uid-owner');
+    expect(actor).toEqual(ACTOR);
     expect(changes.name).toBe('Design Studio Lead');
     expect(changes).not.toHaveProperty('email');
+    // The previous version is passed so the audit trail can record what changed.
+    expect(previous.name).toBe('Design Studio Staff');
   });
 });
 
@@ -230,7 +243,11 @@ describe('activation and deactivation', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Deactivate' }));
 
     await waitFor(() => {
-      expect(mocks.setUserActive).toHaveBeenCalledWith('uid-staff', false, 'uid-owner');
+      expect(mocks.setUserActive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'uid-staff' }),
+        false,
+        ACTOR,
+      );
     });
   });
 
@@ -242,7 +259,11 @@ describe('activation and deactivation', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Activate' }));
 
     await waitFor(() => {
-      expect(mocks.setUserActive).toHaveBeenCalledWith('uid-inactive', true, 'uid-owner');
+      expect(mocks.setUserActive).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'uid-inactive' }),
+        true,
+        ACTOR,
+      );
     });
   });
 
@@ -262,5 +283,93 @@ describe('activation and deactivation', () => {
     await waitFor(() => {
       expect(mocks.resendPasswordSetupEmail).toHaveBeenCalledWith('designer@devasriya.test');
     });
+  });
+});
+
+describe('audit history', () => {
+  it('shows the recorded changes for an employee', async () => {
+    mocks.listAuditEventsForUser.mockResolvedValue([
+      {
+        id: 'audit-1',
+        action: 'role-changed',
+        targetUserId: 'uid-staff',
+        targetName: 'Design Studio Staff',
+        actorId: 'uid-owner',
+        actorName: 'Owner Account',
+        before: 'Viewer',
+        after: 'Designer',
+        createdAt: NOW,
+        createdBy: 'uid-owner',
+        updatedAt: NOW,
+        updatedBy: 'uid-owner',
+      },
+    ]);
+
+    const user = await openRowMenu('Design Studio Staff');
+    await user.click(await screen.findByRole('menuitem', { name: /view history/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Role changed')).toBeInTheDocument();
+    expect(within(dialog).getByText('Viewer to Designer')).toBeInTheDocument();
+    expect(within(dialog).getByText('by Owner Account')).toBeInTheDocument();
+    expect(mocks.listAuditEventsForUser).toHaveBeenCalledWith('uid-staff');
+  });
+
+  it('says so when nothing has been recorded', async () => {
+    const user = await openRowMenu('Design Studio Staff');
+    await user.click(await screen.findByRole('menuitem', { name: /view history/i }));
+
+    expect(await screen.findByText('No changes recorded yet.')).toBeInTheDocument();
+  });
+});
+
+describe('assigning privileged roles', () => {
+  it('lets the owner hand out owner and admin roles', async () => {
+    const user = userEvent.setup();
+    renderUsersPage();
+    await screen.findByText('Design Studio Staff');
+
+    await user.click(screen.getByRole('button', { name: /add employee/i }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('combobox', { name: /role/i }));
+
+    expect(await screen.findByRole('option', { name: 'Owner' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Administrator' })).toBeInTheDocument();
+  });
+
+  it('hides owner and admin from an administrator', async () => {
+    mocks.getUserProfile.mockResolvedValue(
+      makeProfile({ id: 'uid-owner', name: 'Admin Account', role: 'admin' }),
+    );
+    const user = userEvent.setup();
+    renderUsersPage();
+    await screen.findByText('Design Studio Staff');
+
+    await user.click(screen.getByRole('button', { name: /add employee/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText('Owner and admin roles can only be assigned by the owner'),
+    ).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('combobox', { name: /role/i }));
+
+    expect(await screen.findByRole('option', { name: 'Sales / Front Desk' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Owner' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Administrator' })).not.toBeInTheDocument();
+  });
+
+  it('stops an administrator editing an owner record', async () => {
+    mocks.getUserProfile.mockResolvedValue(
+      makeProfile({ id: 'uid-admin', name: 'Admin Account', role: 'admin' }),
+    );
+    mocks.account = { uid: 'uid-admin', email: 'admin@devasriya.test' };
+
+    const user = await openRowMenu('Owner Account');
+    expect(await screen.findByRole('menuitem', { name: /edit details/i })).toHaveAttribute(
+      'data-disabled',
+    );
+    await user.keyboard('{Escape}');
+
+    mocks.account = { uid: 'uid-owner', email: 'owner@devasriya.test' };
   });
 });

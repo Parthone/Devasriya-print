@@ -57,14 +57,16 @@ export const MODULES: ModuleDefinition[] = [
     index: 2,
     id: 'permissions',
     title: 'Roles & Permissions',
-    description: 'Role-based access control across the UI and Firestore security rules.',
-    status: 'planned',
-    route: ROUTES.settings,
+    description:
+      'Granular permission catalogue, permission-guarded routes and navigation, matching security rules and an audit trail.',
+    status: 'done',
+    route: ROUTES.roles,
     scope: [
-      'Role assignment per user',
-      'Permission checks in the UI',
-      'Matching Firestore and Storage rules',
-      'Audit of who changed what',
+      'Typed permission catalogue and default role matrix',
+      'Permission helpers, hooks and the Can gate',
+      'Route guards and permission-filtered navigation',
+      'Firestore rules mirroring the matrix',
+      'Append-only audit trail of role and status changes',
     ],
   },
   {

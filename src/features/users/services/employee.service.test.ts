@@ -16,6 +16,8 @@ const input: EmployeeInput = {
   isActive: true,
 };
 
+const actor = { uid: 'admin-uid', name: 'Owner Account' };
+
 const now = new Date('2026-08-24T10:00:00.000Z');
 const savedProfile: UserProfile = {
   ...input,
@@ -41,10 +43,10 @@ describe('createEmployee', () => {
     const provisioner = fakeProvisioner();
     const createProfile = vi.fn().mockResolvedValue(savedProfile);
 
-    const result = await createEmployee(input, 'admin-uid', { provisioner, createProfile });
+    const result = await createEmployee(input, actor, { provisioner, createProfile });
 
     expect(provisioner.createAccount).toHaveBeenCalledWith('ravi@devasriya.test');
-    expect(createProfile).toHaveBeenCalledWith('new-uid', input, 'admin-uid');
+    expect(createProfile).toHaveBeenCalledWith('new-uid', input, actor);
     expect(provisioner.sendPasswordSetupEmail).toHaveBeenCalledWith('ravi@devasriya.test');
     expect(result).toEqual(savedProfile);
   });
@@ -53,7 +55,7 @@ describe('createEmployee', () => {
     const provisioner = fakeProvisioner();
     const createProfile = vi.fn().mockResolvedValue(savedProfile);
 
-    const result = await createEmployee(input, 'admin-uid', { provisioner, createProfile });
+    const result = await createEmployee(input, actor, { provisioner, createProfile });
 
     expect(JSON.stringify(result)).not.toContain('password');
     expect(Object.keys(input)).not.toContain('password');
@@ -65,9 +67,9 @@ describe('createEmployee', () => {
     });
     const createProfile = vi.fn();
 
-    await expect(
-      createEmployee(input, 'admin-uid', { provisioner, createProfile }),
-    ).rejects.toThrow(AppError);
+    await expect(createEmployee(input, actor, { provisioner, createProfile })).rejects.toThrow(
+      AppError,
+    );
     expect(createProfile).not.toHaveBeenCalled();
   });
 
@@ -76,7 +78,7 @@ describe('createEmployee', () => {
     const createProfile = vi.fn().mockRejectedValue(new AppError('permission-denied', 'nope'));
 
     await expect(
-      createEmployee(input, 'admin-uid', { provisioner, createProfile }),
+      createEmployee(input, actor, { provisioner, createProfile }),
     ).rejects.toMatchObject({
       code: 'conflict',
       message: expect.stringContaining('was created but its profile could not be saved') as string,
@@ -91,7 +93,7 @@ describe('createEmployee', () => {
     const createProfile = vi.fn().mockResolvedValue(savedProfile);
 
     await expect(
-      createEmployee(input, 'admin-uid', { provisioner, createProfile }),
+      createEmployee(input, actor, { provisioner, createProfile }),
     ).rejects.toMatchObject({ code: 'unavailable' });
     expect(createProfile).toHaveBeenCalled();
   });

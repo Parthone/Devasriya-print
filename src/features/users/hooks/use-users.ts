@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+import { listAuditEventsForUser } from '@/features/audit/services/audit.service';
+import type { AuditActor, AuditEvent } from '@/features/audit/types';
 import {
   createEmployee,
   resendPasswordSetupEmail,
@@ -13,6 +15,7 @@ import type { UserProfile } from '@/types/auth';
 import { AppError, type Id } from '@/types/common';
 
 export const USERS_QUERY_KEY = queryKeys.scope('users');
+export const AUDIT_QUERY_KEY = queryKeys.scope('audit');
 
 function describe(error: unknown, fallback: string): string {
   return error instanceof AppError ? error.message : fallback;
@@ -25,13 +28,23 @@ export function useUsers(): UseQueryResult<UserProfile[], Error> {
   });
 }
 
-export function useCreateEmployee(actorId: Id) {
+/** Audit history for one employee. Only fetched while the dialog is open. */
+export function useUserAuditLog(userId: Id | null): UseQueryResult<AuditEvent[], Error> {
+  return useQuery({
+    queryKey: [...AUDIT_QUERY_KEY, userId],
+    queryFn: () => listAuditEventsForUser(userId ?? ''),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useCreateEmployee(actor: AuditActor) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: EmployeeInput) => createEmployee(input, actorId),
+    mutationFn: (input: EmployeeInput) => createEmployee(input, actor),
     onSuccess: (profile) => {
       void queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEY });
       toast.success(`${profile.name} added`, {
         description: `A password setup email has been sent to ${profile.email}.`,
       });
@@ -44,14 +57,22 @@ export function useCreateEmployee(actorId: Id) {
   });
 }
 
-export function useUpdateEmployee(actorId: Id) {
+export function useUpdateEmployee(actor: AuditActor) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ uid, changes }: { uid: Id; changes: EmployeeUpdateInput }) =>
-      updateEmployee(uid, changes, actorId),
+    mutationFn: ({
+      uid,
+      changes,
+      previous,
+    }: {
+      uid: Id;
+      changes: EmployeeUpdateInput;
+      previous: UserProfile;
+    }) => updateEmployee(uid, changes, previous, actor),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEY });
       toast.success('Employee updated');
     },
     onError: (error) => {
@@ -62,14 +83,15 @@ export function useUpdateEmployee(actorId: Id) {
   });
 }
 
-export function useSetUserActive(actorId: Id) {
+export function useSetUserActive(actor: AuditActor) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ uid, isActive }: { uid: Id; isActive: boolean }) =>
-      setUserActive(uid, isActive, actorId),
+    mutationFn: ({ employee, isActive }: { employee: UserProfile; isActive: boolean }) =>
+      setUserActive(employee, isActive, actor),
     onSuccess: (_result, variables) => {
       void queryClient.invalidateQueries({ queryKey: USERS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: AUDIT_QUERY_KEY });
       toast.success(variables.isActive ? 'Employee activated' : 'Employee deactivated');
     },
     onError: (error) => {

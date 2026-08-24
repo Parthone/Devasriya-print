@@ -105,6 +105,28 @@ defence; feature-level boundaries can be nested inside it.
 - Passwords are never entered or seen by administrators - new employees get a
   password setup email.
 
+## 6b. Permissions (Module 2)
+
+- Every capability is a typed `resource:action` constant in
+  `src/features/permissions/catalogue.ts`; `Permission` is a union, so a typo
+  fails the build.
+- `matrix.ts` holds the default role matrix as data, and `resolvePermissions`
+  turns a role into effective permissions. It already accepts overrides so a
+  Settings editor can be added later without touching feature code; nothing
+  produces overrides yet.
+- Feature code never compares role strings. Use `usePermission`,
+  `usePermissions`, or the `<Can permission="...">` gate; guard routes with
+  `ProtectedRoute requires={[...]}`.
+- Three layers enforce the same rule: the sidebar hides what a user cannot open,
+  the route guard blocks direct URLs, and `firestore.rules` refuses the write.
+  Hidden UI is never the control.
+- `firestore.rules` carries its own `rolePermissions()` map covering the
+  collections that exist. Each module extends it when it opens a collection, and
+  the module is not done until the rules match the matrix.
+- Sensitive changes are recorded in `auditLogs`, written in the same batch as
+  the change. Entries are append-only and use server timestamps. The trail is
+  browser-written, so it is honest but not tamper-proof - see docs/MODULES.md.
+
 ## 7. Security rules
 
 `storage.rules` is deny-all, and `firestore.rules` denies everything except the

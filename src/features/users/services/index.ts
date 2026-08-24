@@ -10,7 +10,6 @@ export {
   createUserProfile,
   updateUserProfile,
   setUserActive,
-  changeUserRole,
   userProfileRepository,
 } from './user-profile.service';
 export { userAccountProvisioner } from './provisioning';

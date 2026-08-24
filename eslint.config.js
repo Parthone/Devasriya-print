@@ -50,8 +50,10 @@ export default tseslint.config(
     },
   },
   {
-    // The data-access and Firebase client layers are allowed to use the SDK.
-    files: ['src/lib/firebase/**/*.ts', 'src/services/**/*.ts'],
+    // The data-access layer is allowed to use the SDK: the Firebase client, the
+    // shared repository, and the service folder inside each feature. UI code
+    // (components, pages, hooks) is not.
+    files: ['src/lib/firebase/**/*.ts', 'src/services/**/*.ts', 'src/features/*/services/**/*.ts'],
     rules: {
       'no-restricted-imports': 'off',
     },
@@ -75,9 +77,9 @@ export default tseslint.config(
     },
   },
   {
-    // Security-rules tests drive the Firestore emulator through the SDK on
-    // purpose - they verify the deployed rules, not application behaviour.
-    files: ['**/*.rules.test.ts'],
+    // Emulator tests drive Firestore through the SDK on purpose - they verify
+    // the deployed rules, not application behaviour.
+    files: ['**/*.rules.test.ts', '**/*.e2e.test.ts'],
     rules: {
       'no-restricted-imports': 'off',
     },

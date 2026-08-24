@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { APP_CONFIG } from '@/config/app.config';
 import { NAV_SECTIONS } from '@/constants/routes';
 import { UserMenu } from '@/features/auth/components/UserMenu';
-import { useAuth } from '@/features/auth/hooks/use-auth';
+import { usePermissions } from '@/features/permissions/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,14 +19,14 @@ import { cn } from '@/lib/utils';
  */
 export function AppLayout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const { session } = useAuth();
-  const isAdmin = session.status === 'authenticated' && session.user.isAdmin;
+  const { can } = usePermissions();
 
-  // Admin-only destinations are hidden from staff. The route guard enforces it;
-  // hiding the link keeps the sidebar honest about what a user can open.
+  // The sidebar shows only what this user is allowed to open. Hiding a link is
+  // presentation, not security: the same permission is enforced by the route
+  // guard and by firestore.rules.
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => !item.adminOnly || isAdmin),
+    items: section.items.filter((item) => can(item.permission)),
   })).filter((section) => section.items.length > 0);
 
   const closeSidebar = () => {

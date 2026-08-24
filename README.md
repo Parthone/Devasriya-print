@@ -8,9 +8,10 @@ Built as a real commercial application - React + TypeScript on the front end,
 Firebase (Authentication, Cloud Firestore, Cloud Storage, Hosting) on the back
 end, with an architecture that can move to Google Cloud services later.
 
-> **Status: Modules 0-1 complete** - project foundation, and authentication with
-> employee account management. No other business module has been implemented
-> yet. See [docs/MODULES.md](docs/MODULES.md) for the roadmap.
+> **Status: Modules 0-2 complete** - project foundation, authentication with
+> employee account management, and role-based permissions with an audit trail.
+> No other business module has been implemented yet. See
+> [docs/MODULES.md](docs/MODULES.md) for the roadmap.
 
 ---
 
@@ -151,6 +152,73 @@ npm run dev              # terminal 3, with VITE_USE_FIREBASE_EMULATORS=true
 Password reset emails are not sent by the emulator - the reset link is printed
 in the emulator console instead.
 
+## Roles and permissions
+
+Every capability is a typed `resource:action` permission listed once in
+[`src/features/permissions/catalogue.ts`](src/features/permissions/catalogue.ts),
+and the default role matrix lives in
+[`matrix.ts`](src/features/permissions/matrix.ts). Owner and admin can see the
+live matrix in the app under **Roles & Permissions**.
+
+Two permissions are reserved for the owner: `employees:manage-admins` (handing
+out owner and admin roles) and `settings:manage`. Everything else is available
+to admin.
+
+### Using permissions in code
+
+```tsx
+// Hide an action
+<Can permission="employees:manage">
+  <Button>Add employee</Button>
+</Can>;
+
+// Branch in a component
+const canAssign = usePermission('jobs:assign');
+
+// Guard a route
+<ProtectedRoute requires={['billing:view']}>
+  <BillingPage />
+</ProtectedRoute>;
+```
+
+Hiding UI is presentation, never protection. Every gated action is enforced in
+three places: the sidebar hides it, the route guard blocks direct URLs, and
+`firestore.rules` refuses the write. The rules carry their own copy of the
+matrix (`rolePermissions()`), limited to the collections that exist today; each
+module extends it when it opens its own collection.
+
+### Adding a permission
+
+1. Add the constant to `PERMISSIONS` and a label to `PERMISSION_LABELS`.
+2. Grant it in the role matrix.
+3. Add it to the expected table in `matrix.test.ts` - a permission that widens
+   access without a deliberate test change fails the build.
+4. Mirror it in `firestore.rules` when the collection it protects exists.
+
+### Future configurability
+
+`resolvePermissions(role, overrides)` already applies per-role grants and
+revocations, so a Settings editor can be added later without touching feature
+code. No override document and no editor exist yet; the defaults are what runs.
+Owner-only permissions can never be granted to another role by an override.
+
+## Audit trail
+
+Role changes, activation and deactivation, employee creation and detail edits
+are recorded in the `auditLogs` collection and shown per employee under
+**Employees > View history**.
+
+Each entry is written in the same batch as the change it describes, so the
+record and its history commit together or not at all. Entries are append-only:
+`firestore.rules` refuses every update and delete, requires the actor to be the
+signed-in user, and requires server timestamps so entries cannot be back-dated.
+
+**Limitation, stated plainly:** entries are written by the browser, so the trail
+is reliable against mistakes and partial failures but is **not tamper-proof**.
+Somebody with direct database or service-account access could still write or
+withhold entries. Making the trail authoritative requires a Cloud Function using
+the Admin SDK, which needs the Blaze plan.
+
 ## Project structure
 
 ```
@@ -162,7 +230,9 @@ src/
   config/       App constants and environment parsing
   constants/    Routes, navigation and the module roadmap
   features/
+    audit/      Append-only trail of sensitive changes (Module 2)
     auth/       Sign-in, session, route guard plumbing (Module 1)
+    permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)
   hooks/        Shared React hooks
   layouts/      App shell and auth shell
@@ -202,8 +272,10 @@ rules that matter most:
    `src/services`. ESLint enforces this.
 2. Money is stored as integer paise (`src/lib/money.ts`), never as floating
    point rupees.
-3. Route access goes through `ProtectedRoute`; a role check in the UI is always
-   matched by a rule in `firestore.rules`.
+3. Route access goes through `ProtectedRoute`; a permission checked in the UI is
+   always matched by a rule in `firestore.rules`.
+4. Permissions come from the catalogue - never compare role strings in feature
+   code.
 
 Locale is `en-IN`, currency is INR, and all dates are rendered in
 `Asia/Kolkata`.

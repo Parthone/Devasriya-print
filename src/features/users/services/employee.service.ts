@@ -1,3 +1,4 @@
+import type { AuditActor } from '@/features/audit/types';
 import { userAccountProvisioner } from '@/features/users/services/provisioning';
 import type { UserAccountProvisioner } from '@/features/users/services/provisioning/types';
 import {
@@ -11,7 +12,11 @@ import { AppError, type Id } from '@/types/common';
 
 export interface CreateEmployeeDeps {
   provisioner: UserAccountProvisioner;
-  createProfile: (uid: Id, input: CreateUserProfileInput, actorId: Id) => Promise<UserProfile>;
+  createProfile: (
+    uid: Id,
+    input: CreateUserProfileInput,
+    actor: AuditActor,
+  ) => Promise<UserProfile>;
 }
 
 const defaultDeps: CreateEmployeeDeps = {
@@ -30,14 +35,14 @@ const defaultDeps: CreateEmployeeDeps = {
  */
 export async function createEmployee(
   input: EmployeeInput,
-  actorId: Id,
+  actor: AuditActor,
   deps: CreateEmployeeDeps = defaultDeps,
 ): Promise<UserProfile> {
   const account = await deps.provisioner.createAccount(input.email);
 
   let profile: UserProfile;
   try {
-    profile = await deps.createProfile(account.uid, input, actorId);
+    profile = await deps.createProfile(account.uid, input, actor);
   } catch (error) {
     throw new AppError(
       'conflict',
@@ -65,9 +70,10 @@ export async function createEmployee(
 export async function updateEmployee(
   uid: Id,
   input: EmployeeUpdateInput,
-  actorId: Id,
+  previous: UserProfile,
+  actor: AuditActor,
 ): Promise<void> {
-  await updateUserProfile(uid, input, actorId);
+  await updateUserProfile(uid, input, previous, actor);
 }
 
 export async function resendPasswordSetupEmail(

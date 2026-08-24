@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  ShieldCheck,
   Boxes,
   CalendarClock,
   ClipboardList,
@@ -34,10 +35,13 @@ export const ROUTES = {
   reports: '/reports',
   settings: '/settings',
   users: '/settings/users',
+  roles: '/settings/roles',
   forbidden: '/forbidden',
 } as const;
 
 export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES];
+
+import type { Permission } from '@/features/permissions/catalogue';
 
 export interface NavItem {
   label: string;
@@ -45,8 +49,12 @@ export interface NavItem {
   icon: LucideIcon;
   /** False until the module that owns this route is implemented. */
   enabled: boolean;
-  /** Only shown to owner and admin roles. */
-  adminOnly?: boolean;
+  /**
+   * Permission required to see the link and to open the route. The sidebar
+   * hides what a user cannot open, and the route guard enforces the same rule
+   * for anyone typing the URL directly.
+   */
+  permission: Permission;
 }
 
 export interface NavSection {
@@ -63,40 +71,127 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Overview',
-    items: [{ label: 'Dashboard', path: ROUTES.dashboard, icon: LayoutDashboard, enabled: true }],
+    items: [
+      {
+        label: 'Dashboard',
+        path: ROUTES.dashboard,
+        icon: LayoutDashboard,
+        enabled: true,
+        permission: 'dashboard:view',
+      },
+    ],
   },
   {
     title: 'Sales',
     items: [
-      { label: 'Customers', path: ROUTES.customers, icon: Users, enabled: false },
-      { label: 'Enquiries', path: ROUTES.enquiries, icon: MessageSquareText, enabled: false },
-      { label: 'Jobs & Orders', path: ROUTES.jobs, icon: ClipboardList, enabled: false },
-      { label: 'Measurements & Pricing', path: ROUTES.measurements, icon: Ruler, enabled: false },
-      { label: 'Estimates', path: ROUTES.estimates, icon: FileText, enabled: false },
+      {
+        label: 'Customers',
+        path: ROUTES.customers,
+        icon: Users,
+        enabled: false,
+        permission: 'customers:view',
+      },
+      {
+        label: 'Enquiries',
+        path: ROUTES.enquiries,
+        icon: MessageSquareText,
+        enabled: false,
+        permission: 'enquiries:view',
+      },
+      {
+        label: 'Jobs & Orders',
+        path: ROUTES.jobs,
+        icon: ClipboardList,
+        enabled: false,
+        permission: 'jobs:view',
+      },
+      {
+        label: 'Measurements & Pricing',
+        path: ROUTES.measurements,
+        icon: Ruler,
+        enabled: false,
+        permission: 'estimates:view',
+      },
+      {
+        label: 'Estimates',
+        path: ROUTES.estimates,
+        icon: FileText,
+        enabled: false,
+        permission: 'estimates:view',
+      },
     ],
   },
   {
     title: 'Production',
     items: [
-      { label: 'Designs & Approvals', path: ROUTES.designs, icon: Images, enabled: false },
-      { label: 'Departments', path: ROUTES.production, icon: Factory, enabled: false },
-      { label: 'Deadlines', path: ROUTES.scheduling, icon: CalendarClock, enabled: false },
-      { label: 'Inventory', path: ROUTES.inventory, icon: Boxes, enabled: false },
+      {
+        label: 'Designs & Approvals',
+        path: ROUTES.designs,
+        icon: Images,
+        enabled: false,
+        permission: 'designs:view',
+      },
+      {
+        label: 'Departments',
+        path: ROUTES.production,
+        icon: Factory,
+        enabled: false,
+        permission: 'production:view',
+      },
+      {
+        label: 'Deadlines',
+        path: ROUTES.scheduling,
+        icon: CalendarClock,
+        enabled: false,
+        permission: 'production:view',
+      },
+      {
+        label: 'Inventory',
+        path: ROUTES.inventory,
+        icon: Boxes,
+        enabled: false,
+        permission: 'inventory:view',
+      },
     ],
   },
   {
     title: 'Business',
     items: [
-      { label: 'Billing & Payments', path: ROUTES.billing, icon: Wallet, enabled: false },
+      {
+        label: 'Billing & Payments',
+        path: ROUTES.billing,
+        icon: Wallet,
+        enabled: false,
+        permission: 'billing:view',
+      },
       {
         label: 'Employees',
         path: ROUTES.users,
         icon: UserCog,
         enabled: true,
-        adminOnly: true,
+        permission: 'employees:view',
       },
-      { label: 'Reports', path: ROUTES.reports, icon: BarChart3, enabled: false },
-      { label: 'Settings', path: ROUTES.settings, icon: Settings, enabled: false },
+      {
+        label: 'Roles & Permissions',
+        path: ROUTES.roles,
+        icon: ShieldCheck,
+        enabled: true,
+        permission: 'settings:view',
+      },
+      {
+        label: 'Reports',
+        path: ROUTES.reports,
+        icon: BarChart3,
+        enabled: false,
+        permission: 'reports:view',
+      },
+      {
+        label: 'Settings',
+        path: ROUTES.settings,
+        icon: Settings,
+        enabled: false,
+        permission: 'settings:view',
+      },
     ],
   },
 ];

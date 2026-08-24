@@ -6,6 +6,8 @@ import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { deleteDoc, doc, updateDoc } from 'firebase/firestore';
+
 const PROJECT_ID = 'demo-devasriya';
 const AUTH_EMULATOR = '127.0.0.1:9099';
 const FIRESTORE_EMULATOR = '127.0.0.1:8080';
@@ -27,7 +29,9 @@ const { resolveSession } = await import('@/features/auth/session');
 const { getUserProfile, listUserProfiles, setUserActive } =
   await import('@/features/users/services/user-profile.service');
 const { createEmployee } = await import('@/features/users/services/employee.service');
-const { getFirebaseAuth } = await import('@/lib/firebase/client');
+const { listAuditEventsForUser } = await import('@/features/audit/services/audit.service');
+const { getFirebaseAuth, getDb } = await import('@/lib/firebase/client');
+const { updateUserProfile } = await import('@/features/users/services/user-profile.service');
 const { AppError } = await import('@/types/common');
 
 const adminApp = initializeAdminApp({ projectId: PROJECT_ID }, 'e2e-admin');
@@ -38,6 +42,7 @@ const OWNER = { email: 'owner@devasriya.test', password: 'Owner@12345', uid: '' 
 const STAFF = { email: 'designer@devasriya.test', password: 'Design@12345', uid: '' };
 const INACTIVE = { email: 'inactive@devasriya.test', password: 'Inactive@123', uid: '' };
 const GHOST = { email: 'ghost@devasriya.test', password: 'Ghost@12345', uid: '' };
+const PRODUCTION = { email: 'production@devasriya.test', password: 'Product@123', uid: '' };
 
 interface SeedProfile {
   name: string;
@@ -91,6 +96,9 @@ async function fetchOobCodes(): Promise<{ email: string; requestType: string }[]
   return body.oobCodes ?? [];
 }
 
+const ownerActor = { uid: '', name: 'Owner Account' };
+const staffActor = { uid: '', name: 'Design Studio Staff' };
+
 async function signInAndResolve(email: string, password: string) {
   const account = await signInWithEmail(email, password);
   const profile = await getUserProfile(account.uid);
@@ -122,7 +130,17 @@ beforeAll(async () => {
     role: 'viewer',
     isActive: false,
   });
+  await seedAccount(PRODUCTION, {
+    name: 'Production Lead',
+    mobile: '9876500004',
+    designation: 'supervisor',
+    department: 'printing',
+    role: 'production',
+    isActive: true,
+  });
   await seedAccount(GHOST, null);
+  ownerActor.uid = OWNER.uid;
+  staffActor.uid = STAFF.uid;
 });
 
 afterAll(async () => {
@@ -217,7 +235,11 @@ describe('security rules through the client SDK', () => {
 
   it('stops staff editing their own role', async () => {
     await signInWithEmail(STAFF.email, STAFF.password);
-    await expect(setUserActive(STAFF.uid, false, STAFF.uid)).rejects.toBeInstanceOf(AppError);
+    const staffProfile = await getUserProfile(STAFF.uid);
+    expect(staffProfile).not.toBeNull();
+    await expect(
+      setUserActive(staffProfile!, false, { uid: STAFF.uid, name: 'Design Studio Staff' }),
+    ).rejects.toBeInstanceOf(AppError);
   });
 });
 
@@ -242,7 +264,7 @@ describe('creating an employee from the browser', () => {
   it('creates the account and profile while keeping the admin signed in', async () => {
     await signInWithEmail(OWNER.email, OWNER.password);
 
-    const profile = await createEmployee(newEmployee, OWNER.uid);
+    const profile = await createEmployee(newEmployee, ownerActor);
 
     // The administrator session survived the secondary-app provisioning.
     expect(getFirebaseAuth().currentUser?.uid).toBe(OWNER.uid);
@@ -266,7 +288,7 @@ describe('creating an employee from the browser', () => {
 
   it('emails the new employee a password setup link', async () => {
     await signInWithEmail(OWNER.email, OWNER.password);
-    await createEmployee(newEmployee, OWNER.uid);
+    await createEmployee(newEmployee, ownerActor);
 
     const codes = await fetchOobCodes();
     const forNewEmployee = codes.filter((code) => code.email === newEmployee.email);
@@ -277,7 +299,7 @@ describe('creating an employee from the browser', () => {
   it('refuses to create staff when a non-admin is signed in', async () => {
     await signInWithEmail(STAFF.email, STAFF.password);
 
-    await expect(createEmployee(newEmployee, STAFF.uid)).rejects.toMatchObject({
+    await expect(createEmployee(newEmployee, staffActor)).rejects.toMatchObject({
       code: 'conflict',
     });
 
@@ -290,22 +312,24 @@ describe('creating an employee from the browser', () => {
 
   it('rejects a duplicate email address', async () => {
     await signInWithEmail(OWNER.email, OWNER.password);
-    await createEmployee(newEmployee, OWNER.uid);
+    await createEmployee(newEmployee, ownerActor);
 
-    await expect(createEmployee(newEmployee, OWNER.uid)).rejects.toBeInstanceOf(AppError);
+    await expect(createEmployee(newEmployee, ownerActor)).rejects.toBeInstanceOf(AppError);
   });
 });
 
 describe('deactivating an employee', () => {
   it('blocks the next sign-in and is reversible', async () => {
     await signInWithEmail(OWNER.email, OWNER.password);
-    await setUserActive(STAFF.uid, false, OWNER.uid);
+    const staffProfile = await getUserProfile(STAFF.uid);
+    await setUserActive(staffProfile!, false, ownerActor);
 
     const blocked = await signInAndResolve(STAFF.email, STAFF.password);
     expect(blocked).toMatchObject({ status: 'unauthenticated', rejection: 'inactive' });
 
     await signInWithEmail(OWNER.email, OWNER.password);
-    await setUserActive(STAFF.uid, true, OWNER.uid);
+    const deactivated = await getUserProfile(STAFF.uid);
+    await setUserActive(deactivated!, true, ownerActor);
 
     const restored = await signInAndResolve(STAFF.email, STAFF.password);
     expect(restored.status).toBe('authenticated');
@@ -313,7 +337,8 @@ describe('deactivating an employee', () => {
 
   it('stops an administrator deactivating their own account', async () => {
     await signInWithEmail(OWNER.email, OWNER.password);
-    await expect(setUserActive(OWNER.uid, false, OWNER.uid)).rejects.toMatchObject({
+    const ownerProfile = await getUserProfile(OWNER.uid);
+    await expect(setUserActive(ownerProfile!, false, ownerActor)).rejects.toMatchObject({
       code: 'invalid-input',
     });
   });
@@ -325,5 +350,138 @@ describe('password reset', () => {
 
     const codes = await fetchOobCodes();
     expect(codes.some((code) => code.email === STAFF.email)).toBe(true);
+  });
+});
+
+describe('audit trail', () => {
+  async function auditFor(uid: string) {
+    return listAuditEventsForUser(uid);
+  }
+
+  it('records an entry when an employee is created', async () => {
+    await adminAuth
+      .getUserByEmail('audit.subject@devasriya.test')
+      .then((user) => adminAuth.deleteUser(user.uid))
+      .catch(() => undefined);
+
+    await signInWithEmail(OWNER.email, OWNER.password);
+    const created = await createEmployee(
+      {
+        name: 'Audit Subject',
+        email: 'audit.subject@devasriya.test',
+        mobile: '9876500009',
+        designation: 'helper',
+        department: 'finishing',
+        role: 'viewer',
+        isActive: true,
+      },
+      ownerActor,
+    );
+
+    const entries = await auditFor(created.id);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      action: 'employee-created',
+      targetUserId: created.id,
+      targetName: 'Audit Subject',
+      actorId: OWNER.uid,
+      actorName: 'Owner Account',
+    });
+    // Server timestamps, so the trail cannot be back-dated by a client clock.
+    expect(entries[0]?.createdAt).toBeInstanceOf(Date);
+  });
+
+  it('records role changes and status changes with before and after values', async () => {
+    await signInWithEmail(OWNER.email, OWNER.password);
+    const before = await getUserProfile(STAFF.uid);
+    expect(before).not.toBeNull();
+
+    await updateUserProfile(
+      STAFF.uid,
+      {
+        name: before!.name,
+        mobile: before!.mobile,
+        designation: before!.designation,
+        department: before!.department,
+        role: 'sales',
+        isActive: true,
+      },
+      before!,
+      ownerActor,
+    );
+
+    const afterRoleChange = await auditFor(STAFF.uid);
+    expect(afterRoleChange[0]).toMatchObject({
+      action: 'role-changed',
+      before: 'Designer',
+      after: 'Sales / Front Desk',
+      actorId: OWNER.uid,
+    });
+
+    // Put the role back and deactivate, then check the status entry.
+    const restored = await getUserProfile(STAFF.uid);
+    await updateUserProfile(
+      STAFF.uid,
+      {
+        name: restored!.name,
+        mobile: restored!.mobile,
+        designation: restored!.designation,
+        department: restored!.department,
+        role: 'designer',
+        isActive: true,
+      },
+      restored!,
+      ownerActor,
+    );
+
+    const current = await getUserProfile(STAFF.uid);
+    await setUserActive(current!, false, ownerActor);
+    const afterDeactivation = await auditFor(STAFF.uid);
+    expect(afterDeactivation[0]).toMatchObject({
+      action: 'status-changed',
+      before: 'Active',
+      after: 'Inactive',
+    });
+
+    const reactivate = await getUserProfile(STAFF.uid);
+    await setUserActive(reactivate!, true, ownerActor);
+  });
+
+  it('writes the profile change and its audit entry together, or not at all', async () => {
+    // A non-admin cannot write either document, so nothing lands.
+    await signInWithEmail(PRODUCTION.email, PRODUCTION.password);
+    const target = await getUserProfile(STAFF.uid);
+    expect(target).not.toBeNull();
+
+    await expect(
+      setUserActive(target!, false, { uid: PRODUCTION.uid, name: 'Production Lead' }),
+    ).rejects.toMatchObject({ code: 'permission-denied' });
+
+    const stored = await adminDb.collection('users').doc(STAFF.uid).get();
+    expect(stored.data()?.isActive).toBe(true);
+  });
+
+  it('refuses to let anyone edit or delete an entry', async () => {
+    await signInWithEmail(OWNER.email, OWNER.password);
+    const entries = await auditFor(STAFF.uid);
+    expect(entries.length).toBeGreaterThan(0);
+    const entryId = entries[0]!.id;
+
+    await expect(
+      updateDoc(doc(getDb(), 'auditLogs', entryId), { after: 'tampered' }),
+    ).rejects.toThrow();
+    await expect(deleteDoc(doc(getDb(), 'auditLogs', entryId))).rejects.toThrow();
+
+    const stillThere = await adminDb.collection('auditLogs').doc(entryId).get();
+    expect(stillThere.exists).toBe(true);
+    expect(stillThere.data()?.after).not.toBe('tampered');
+  });
+
+  it('hides the trail from roles without employees:manage', async () => {
+    await signInWithEmail(PRODUCTION.email, PRODUCTION.password);
+    await expect(auditFor(STAFF.uid)).rejects.toMatchObject({ code: 'permission-denied' });
+
+    // Production may still see the directory itself.
+    await expect(listUserProfiles()).resolves.toBeInstanceOf(Array);
   });
 });

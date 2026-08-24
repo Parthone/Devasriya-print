@@ -18,6 +18,9 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DEPARTMENT_LABELS } from '@/constants/organization';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
+import { AuditLogDialog } from '@/features/audit/components/AuditLogDialog';
+import { Can } from '@/features/permissions/components/Can';
+import { usePermissions } from '@/features/permissions/hooks/use-permissions';
 import { EmployeeFormDialog } from '@/features/users/components/EmployeeFormDialog';
 import { EmployeeTable } from '@/features/users/components/EmployeeTable';
 import {
@@ -46,16 +49,22 @@ function matches(employee: UserProfile, term: string): boolean {
 /** Staff directory and account management. Owner and admin roles only. */
 export function UsersPage() {
   const currentUser = useAuthenticatedUser();
+  const { can } = usePermissions();
+  const actor = { uid: currentUser.uid, name: currentUser.name };
+  const canManage = can('employees:manage');
+  const canManageAdmins = can('employees:manage-admins');
+
   const usersQuery = useUsers();
-  const createEmployee = useCreateEmployee(currentUser.uid);
-  const updateEmployee = useUpdateEmployee(currentUser.uid);
-  const setActive = useSetUserActive(currentUser.uid);
+  const createEmployee = useCreateEmployee(actor);
+  const updateEmployee = useUpdateEmployee(actor);
+  const setActive = useSetUserActive(actor);
   const resendPassword = useResendPasswordEmail();
 
   const [search, setSearch] = useState('');
   const [isFormOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserProfile | undefined>(undefined);
   const [statusTarget, setStatusTarget] = useState<UserProfile | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<UserProfile | null>(null);
 
   const employees = useMemo(() => {
     const list = usersQuery.data ?? [];
@@ -65,7 +74,7 @@ export function UsersPage() {
   const handleSubmit = async (values: EmployeeInput): Promise<void> => {
     if (editing) {
       const { email: _email, ...changes } = values;
-      await updateEmployee.mutateAsync({ uid: editing.id, changes });
+      await updateEmployee.mutateAsync({ uid: editing.id, changes, previous: editing });
     } else {
       await createEmployee.mutateAsync(values);
     }
@@ -81,14 +90,16 @@ export function UsersPage() {
         title="Employees"
         description="Staff accounts, roles and access to Devasriya Print."
         actions={
-          <Button
-            onClick={() => {
-              setEditing(undefined);
-              setFormOpen(true);
-            }}
-          >
-            <Plus className="size-4" aria-hidden="true" /> Add employee
-          </Button>
+          <Can permission="employees:manage">
+            <Button
+              onClick={() => {
+                setEditing(undefined);
+                setFormOpen(true);
+              }}
+            >
+              <Plus className="size-4" aria-hidden="true" /> Add employee
+            </Button>
+          </Can>
         }
       />
 
@@ -133,6 +144,11 @@ export function UsersPage() {
             <EmployeeTable
               employees={employees}
               currentUserId={currentUser.uid}
+              canManage={canManage}
+              canManageAdmins={canManageAdmins}
+              onViewHistory={(employee) => {
+                setHistoryTarget(employee);
+              }}
               onEdit={(employee) => {
                 setEditing(employee);
                 setFormOpen(true);
@@ -156,8 +172,17 @@ export function UsersPage() {
         }}
         employee={editing}
         isSelf={editing?.id === currentUser.uid}
+        canAssignAdminRoles={canManageAdmins}
         isSaving={isSaving}
         onSubmit={handleSubmit}
+      />
+
+      <AuditLogDialog
+        userId={historyTarget?.id ?? null}
+        userName={historyTarget?.name ?? ''}
+        onClose={() => {
+          setHistoryTarget(null);
+        }}
       />
 
       <AlertDialog
@@ -184,7 +209,7 @@ export function UsersPage() {
               onClick={() => {
                 if (!statusTarget) return;
                 setActive.mutate(
-                  { uid: statusTarget.id, isActive: !statusTarget.isActive },
+                  { employee: statusTarget, isActive: !statusTarget.isActive },
                   {
                     onSettled: () => {
                       setStatusTarget(null);

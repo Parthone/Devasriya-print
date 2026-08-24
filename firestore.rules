@@ -7,7 +7,12 @@ rules_version = '2';
 // it, together with the role model it depends on.
 //
 // Open collections:
-//   users  (Module 1 - Authentication & Users)
+//   users      (Module 1 - Authentication & Users)
+//   auditLogs  (Module 2 - Roles & Permissions)
+//
+// Authorisation mirrors the application permission matrix in
+// src/features/permissions/matrix.ts. Hidden UI is never the control: every
+// permission checked in the browser is checked again here.
 // ---------------------------------------------------------------------------
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -33,8 +38,27 @@ service cloud.firestore {
       return hasProfile() && myProfile().isActive == true;
     }
 
-    function isAdmin() {
-      return isActiveUser() && myProfile().role in ['owner', 'admin'];
+    // The permission matrix, limited to the permissions these rules enforce.
+    // Every module extends this map when it opens up its own collections.
+    function rolePermissions() {
+      return {
+        'owner': ['employees:view', 'employees:manage', 'employees:manage-admins',
+                  'settings:view', 'settings:manage'],
+        'admin': ['employees:view', 'employees:manage', 'settings:view'],
+        'sales': [],
+        'designer': [],
+        'production': ['employees:view'],
+        'accounts': [],
+        'viewer': []
+      };
+    }
+
+    function can(permission) {
+      return isActiveUser() && permission in rolePermissions()[myProfile().role];
+    }
+
+    function isPrivilegedRole(role) {
+      return role in ['owner', 'admin'];
     }
 
     function isValidProfile(data) {
@@ -60,24 +84,33 @@ service cloud.firestore {
     match /users/{userId} {
       // A signed-in user may always read their own profile - the application
       // needs it to tell "deactivated" apart from "no profile at all".
-      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == userId || can('employees:view'));
+      allow list: if can('employees:view');
 
-      allow create: if isAdmin()
+      allow create: if can('employees:manage')
                     && isValidProfile(request.resource.data)
                     && request.resource.data.createdBy == request.auth.uid
-                    && request.resource.data.updatedBy == request.auth.uid;
+                    && request.resource.data.updatedBy == request.auth.uid
+                    // Handing out owner or admin is reserved for the owner.
+                    && (!isPrivilegedRole(request.resource.data.role)
+                        || can('employees:manage-admins'));
 
       // `resource` is null when Firestore evaluates the update branch for a
       // write to a document that does not exist yet; guard so the rule returns
       // false instead of raising an evaluation error.
-      allow update: if isAdmin()
+      allow update: if can('employees:manage')
                     && resource != null
                     && isValidProfile(request.resource.data)
                     && request.resource.data.email == resource.data.email
                     && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.createdBy == resource.data.createdBy
                     && request.resource.data.updatedBy == request.auth.uid
+                    // Only the owner may edit an owner or admin record, or
+                    // promote somebody into one of those roles.
+                    && (!isPrivilegedRole(resource.data.role)
+                        || can('employees:manage-admins'))
+                    && (!isPrivilegedRole(request.resource.data.role)
+                        || can('employees:manage-admins'))
                     // Administrators cannot demote or deactivate themselves and
                     // lock the business out of its own software.
                     && (request.auth.uid != userId
@@ -86,6 +119,37 @@ service cloud.firestore {
 
       // Staff records are never deleted: history and audit trails depend on them.
       allow delete: if false;
+    }
+
+    // Append-only trail of role and status changes. Written by the browser in
+    // the same batch as the change it describes; never edited or removed.
+    match /auditLogs/{entryId} {
+      function isValidAuditEntry(data) {
+        return data.keys().hasOnly([
+                 'action', 'targetUserId', 'targetName', 'actorId', 'actorName',
+                 'before', 'after', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+               ])
+               && data.keys().hasAll([
+                 'action', 'targetUserId', 'targetName', 'actorId', 'actorName',
+                 'before', 'after', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+               ])
+               && data.action in ['employee-created', 'role-changed', 'status-changed',
+                                  'profile-updated']
+               && data.targetUserId is string && data.targetUserId.size() > 0
+               && data.targetName is string
+               && data.before is string && data.after is string
+               // The trail records who actually made the change.
+               && data.actorId == request.auth.uid
+               && data.createdBy == request.auth.uid
+               && data.updatedBy == request.auth.uid
+               // Server time only, so entries cannot be back-dated.
+               && data.createdAt == request.time
+               && data.updatedAt == request.time;
+      }
+
+      allow get, list: if can('employees:manage');
+      allow create: if can('employees:manage') && isValidAuditEntry(request.resource.data);
+      allow update, delete: if false;
     }
 
     match /{document=**} {

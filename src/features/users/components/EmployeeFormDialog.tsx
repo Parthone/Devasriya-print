@@ -22,13 +22,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { getDepartments, getDesignations } from '@/constants/organization';
+import { assignableRoles } from '@/features/permissions/matrix';
 import {
   employeeFormSchema,
   normaliseEmployeeValues,
   type EmployeeFormValues,
   type EmployeeInput,
 } from '@/features/users/types';
-import { USER_ROLES, USER_ROLE_LABELS, type UserProfile } from '@/types/auth';
+import { USER_ROLE_LABELS, type UserProfile } from '@/types/auth';
 
 const DEPARTMENT_OPTIONS = getDepartments();
 const DESIGNATION_OPTIONS = getDesignations();
@@ -53,6 +54,8 @@ interface EmployeeFormDialogProps {
   onSubmit: (values: EmployeeInput) => Promise<void>;
   /** Editing your own account: role and status are locked. */
   isSelf?: boolean;
+  /** Holder of employees:manage-admins may hand out owner and admin roles. */
+  canAssignAdminRoles?: boolean;
 }
 
 export function EmployeeFormDialog({
@@ -62,8 +65,19 @@ export function EmployeeFormDialog({
   isSaving,
   onSubmit,
   isSelf = false,
+  canAssignAdminRoles = false,
 }: EmployeeFormDialogProps) {
   const isEdit = Boolean(employee);
+  // Roles this user is allowed to hand out. The current role of the employee
+  // being edited is always shown, so an admin editing an owner sees the truth
+  // even though they cannot select it.
+  const selectableRoles = assignableRoles(canAssignAdminRoles);
+  const roleOptions =
+    employee && !selectableRoles.includes(employee.role)
+      ? [employee.role, ...selectableRoles]
+      : selectableRoles;
+  const isRoleLocked =
+    isSelf || (employee !== undefined && !selectableRoles.includes(employee.role));
 
   const {
     register,
@@ -204,12 +218,18 @@ export function EmployeeFormDialog({
             id="role"
             label="Role"
             error={errors.role?.message}
-            hint={isSelf ? 'You cannot change your own role' : 'Decides what the employee can open'}
+            hint={
+              isSelf
+                ? 'You cannot change your own role'
+                : canAssignAdminRoles
+                  ? 'Decides what the employee can open'
+                  : 'Owner and admin roles can only be assigned by the owner'
+            }
             className="sm:col-span-2"
           >
             <Select
               value={role}
-              disabled={isSelf}
+              disabled={isRoleLocked}
               onValueChange={(value) => {
                 setValue('role', value as EmployeeFormValues['role'], { shouldDirty: true });
               }}
@@ -218,8 +238,8 @@ export function EmployeeFormDialog({
                 <SelectValue placeholder="Select role" />
               </SelectTrigger>
               <SelectContent>
-                {USER_ROLES.map((value) => (
-                  <SelectItem key={value} value={value}>
+                {roleOptions.map((value) => (
+                  <SelectItem key={value} value={value} disabled={!selectableRoles.includes(value)}>
                     {USER_ROLE_LABELS[value]}
                   </SelectItem>
                 ))}

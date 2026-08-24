@@ -4,7 +4,16 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 
@@ -17,6 +26,8 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 let testEnv: RulesTestEnvironment;
 
 const OWNER = 'uid-owner';
+const ADMIN = 'uid-admin';
+const PRODUCTION = 'uid-production';
 const STAFF = 'uid-staff';
 const INACTIVE = 'uid-inactive';
 const NEW_USER = 'uid-new';
@@ -62,6 +73,19 @@ beforeEach(async () => {
     await setDoc(
       doc(db, 'users', OWNER),
       profile({ name: 'Owner Account', email: 'owner@devasriya.test', role: 'owner' }),
+    );
+    await setDoc(
+      doc(db, 'users', ADMIN),
+      profile({ name: 'Admin Account', email: 'admin@devasriya.test', role: 'admin' }),
+    );
+    await setDoc(
+      doc(db, 'users', PRODUCTION),
+      profile({
+        name: 'Production Lead',
+        email: 'production@devasriya.test',
+        role: 'production',
+        department: 'printing',
+      }),
     );
     await setDoc(doc(db, 'users', STAFF), profile());
     await setDoc(
@@ -212,5 +236,195 @@ describe('every other collection', () => {
     const db = testEnv.authenticatedContext(OWNER).firestore();
     await assertFails(getDocs(collection(db, 'customers')));
     await assertFails(setDoc(doc(db, 'jobs', 'job-1'), { anything: true }));
+  });
+});
+
+describe('users collection - privileged roles', () => {
+  it('lets production view the directory but change nothing', async () => {
+    const db = testEnv.authenticatedContext(PRODUCTION).firestore();
+
+    await assertSucceeds(getDocs(collection(db, 'users')));
+    await assertSucceeds(getDoc(doc(db, 'users', STAFF)));
+    await assertFails(
+      updateDoc(doc(db, 'users', STAFF), { name: 'Renamed', updatedBy: PRODUCTION }),
+    );
+    await assertFails(
+      setDoc(doc(db, 'users', NEW_USER), profile({ createdBy: PRODUCTION, updatedBy: PRODUCTION })),
+    );
+  });
+
+  it('stops an administrator creating another administrator or an owner', async () => {
+    const db = testEnv.authenticatedContext(ADMIN).firestore();
+
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'users', NEW_USER),
+        profile({ email: 'new@devasriya.test', role: 'sales', createdBy: ADMIN, updatedBy: ADMIN }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(db, 'users', 'uid-new-admin'),
+        profile({
+          email: 'new2@devasriya.test',
+          role: 'admin',
+          createdBy: ADMIN,
+          updatedBy: ADMIN,
+        }),
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(db, 'users', 'uid-new-owner'),
+        profile({
+          email: 'new3@devasriya.test',
+          role: 'owner',
+          createdBy: ADMIN,
+          updatedBy: ADMIN,
+        }),
+      ),
+    );
+  });
+
+  it('lets the owner create an administrator', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'users', 'uid-new-admin'),
+        profile({
+          email: 'new2@devasriya.test',
+          role: 'admin',
+          createdBy: OWNER,
+          updatedBy: OWNER,
+        }),
+      ),
+    );
+  });
+
+  it('stops an administrator editing an owner or another administrator', async () => {
+    const db = testEnv.authenticatedContext(ADMIN).firestore();
+
+    await assertFails(updateDoc(doc(db, 'users', OWNER), { name: 'Hijacked', updatedBy: ADMIN }));
+    await assertFails(updateDoc(doc(db, 'users', OWNER), { isActive: false, updatedBy: ADMIN }));
+    await assertSucceeds(updateDoc(doc(db, 'users', STAFF), { name: 'Renamed', updatedBy: ADMIN }));
+  });
+
+  it('stops an administrator promoting anybody to admin or owner', async () => {
+    const db = testEnv.authenticatedContext(ADMIN).firestore();
+    await assertFails(updateDoc(doc(db, 'users', STAFF), { role: 'admin', updatedBy: ADMIN }));
+    await assertFails(updateDoc(doc(db, 'users', STAFF), { role: 'owner', updatedBy: ADMIN }));
+    await assertSucceeds(updateDoc(doc(db, 'users', STAFF), { role: 'sales', updatedBy: ADMIN }));
+  });
+
+  it('lets the owner promote and demote administrators', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertSucceeds(updateDoc(doc(db, 'users', STAFF), { role: 'admin', updatedBy: OWNER }));
+    await assertSucceeds(updateDoc(doc(db, 'users', ADMIN), { role: 'viewer', updatedBy: OWNER }));
+  });
+});
+
+describe('auditLogs collection', () => {
+  function auditEntry(overrides: Record<string, unknown> = {}) {
+    return {
+      action: 'role-changed',
+      targetUserId: STAFF,
+      targetName: 'Design Studio Staff',
+      actorId: OWNER,
+      actorName: 'Owner Account',
+      before: 'Viewer',
+      after: 'Designer',
+      createdAt: serverTimestamp(),
+      createdBy: OWNER,
+      updatedAt: serverTimestamp(),
+      updatedBy: OWNER,
+      ...overrides,
+    };
+  }
+
+  async function seedEntry() {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'auditLogs', 'entry-1'), {
+        ...auditEntry(),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+    });
+  }
+
+  it('lets an administrator record a change', async () => {
+    const db = testEnv.authenticatedContext(ADMIN).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'auditLogs', 'entry-admin'),
+        auditEntry({ actorId: ADMIN, createdBy: ADMIN, updatedBy: ADMIN, actorName: 'Admin' }),
+      ),
+    );
+  });
+
+  it('refuses an entry that blames somebody else', async () => {
+    const db = testEnv.authenticatedContext(ADMIN).firestore();
+    await assertFails(
+      setDoc(
+        doc(db, 'auditLogs', 'entry-spoof'),
+        auditEntry({ actorId: OWNER, createdBy: ADMIN, updatedBy: ADMIN }),
+      ),
+    );
+  });
+
+  it('refuses a back-dated entry', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      setDoc(
+        doc(db, 'auditLogs', 'entry-backdated'),
+        auditEntry({ createdAt: NOW, updatedAt: NOW }),
+      ),
+    );
+  });
+
+  it('refuses an entry with an unknown action or extra fields', async () => {
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+    await assertFails(
+      setDoc(
+        doc(db, 'auditLogs', 'entry-bad-action'),
+        auditEntry({ action: 'deleted-everything' }),
+      ),
+    );
+    await assertFails(setDoc(doc(db, 'auditLogs', 'entry-extra'), auditEntry({ note: 'sneaky' })));
+  });
+
+  it('never allows an entry to be edited or deleted, not even by the owner', async () => {
+    await seedEntry();
+    const db = testEnv.authenticatedContext(OWNER).firestore();
+
+    await assertFails(updateDoc(doc(db, 'auditLogs', 'entry-1'), { after: 'Owner' }));
+    await assertFails(deleteDoc(doc(db, 'auditLogs', 'entry-1')));
+  });
+
+  it('lets owners and administrators read the trail', async () => {
+    await seedEntry();
+
+    for (const uid of [OWNER, ADMIN]) {
+      const db = testEnv.authenticatedContext(uid).firestore();
+      await assertSucceeds(getDocs(collection(db, 'auditLogs')));
+      await assertSucceeds(getDoc(doc(db, 'auditLogs', 'entry-1')));
+    }
+  });
+
+  it('hides the trail from staff, from production and from signed-out clients', async () => {
+    await seedEntry();
+
+    for (const uid of [STAFF, PRODUCTION, INACTIVE]) {
+      const db = testEnv.authenticatedContext(uid).firestore();
+      await assertFails(getDocs(collection(db, 'auditLogs')));
+      await assertFails(
+        setDoc(
+          doc(db, 'auditLogs', `entry-${uid}`),
+          auditEntry({ actorId: uid, createdBy: uid, updatedBy: uid }),
+        ),
+      );
+    }
+
+    const anonymous = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDocs(collection(anonymous, 'auditLogs')));
   });
 });

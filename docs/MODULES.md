@@ -121,11 +121,57 @@ Firebase project, and deactivation cannot disable the Auth account itself. Such
 accounts have no profile and are rejected by both the application and the rules,
 so they grant no access. A Cloud Function implementation (Blaze plan) closes it.
 
-## Next: Module 2 - Roles & Permissions
+## Module 2 - Roles & Permissions (delivered)
+
+**Permission model**
+
+- 31 typed permissions across every business area, defined once in
+  `src/features/permissions/catalogue.ts`
+- Default role matrix as data in `matrix.ts`; `resolvePermissions(role,
+overrides)` is the only way permissions are derived
+- Owner always holds every permission; `employees:manage-admins` and
+  `settings:manage` are owner-only and cannot be granted by an override
+- Job assignment stays with owner and admin - a future override can grant
+  `jobs:assign` to a production supervisor without any code change
+
+**Enforcement**
+
+- `ProtectedRoute requires={[...]}` guards every route, including the
+  placeholders for modules that do not exist yet
+- Sidebar renders only what the user may open
+- `<Can>` / `PermissionGate`, `usePermission`, `usePermissions`,
+  `hasPermission` / `hasAllPermissions` / `hasAnyPermission`
+- `firestore.rules` carries a `rolePermissions()` map mirroring the matrix for
+  the collections that exist, plus privileged-role rules: only the owner may
+  create, edit or promote owner and admin records
+
+**Roles & Permissions screen** (`/settings/roles`, `settings:view`)
+
+- Renders the live matrix, so the reference can never drift from what is
+  enforced
+
+**Audit trail**
+
+- `auditLogs` collection: employee created, role changed, status changed,
+  details updated - with actor, target, before and after
+- Written in the same batch as the change; server timestamps only
+- Append-only: rules refuse every update and delete
+- Visible per employee under Employees > View history
+- Composite index for `targetUserId` + `createdAt` in `firestore.indexes.json`
+
+**Known limitation**
+
+The audit trail is written by the browser. It is reliable against mistakes and
+partial failures, but not tamper-proof: someone with direct database or
+service-account access could write or withhold entries. A Cloud Function with
+the Admin SDK (Blaze plan) is required to make it authoritative. The same
+applies to the account-provisioning limitation from Module 1.
+
+## Next: Module 3 - Customer Management
 
 Scope to be confirmed before implementation:
 
-- Permission catalogue per module and role
-- Permission checks in the UI (`ProtectedRoute` already accepts `requires`)
-- Firestore rules driven by the same role model
-- An audit trail of role and status changes
+- Customer directory with search and pagination
+- Contacts, addresses and GSTIN
+- Credit terms and outstanding summary
+- Firestore rules and permissions for `customers:*`

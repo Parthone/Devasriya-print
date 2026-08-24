@@ -1,5 +1,8 @@
 import type { Department, Designation } from '@/constants/organization';
+import type { Permission } from '@/features/permissions/catalogue';
 import type { Entity, Id } from '@/types/common';
+
+export type { Permission };
 
 /**
  * Role vocabulary.
@@ -36,9 +39,6 @@ export function isAdminRole(role: UserRole): boolean {
   return ADMIN_ROLES.includes(role);
 }
 
-/** `resource:action`, e.g. "job:create". Enforced from Module 2. */
-export type Permission = `${string}:${string}`;
-
 /**
  * Firestore profile document at `users/{uid}`. The document id is always the
  * Firebase Auth UID - that link is what the security rules are built on.
@@ -66,7 +66,10 @@ export interface AuthenticatedUser {
   email: string;
   name: string;
   role: UserRole;
+  /** Owner or admin. Convenience only - authorise with `permissions`. */
   isAdmin: boolean;
+  /** Effective permissions, resolved from the role matrix. */
+  permissions: readonly Permission[];
   profile: UserProfile;
 }
 

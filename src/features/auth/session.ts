@@ -1,3 +1,4 @@
+import { resolvePermissions } from '@/features/permissions/matrix';
 import {
   isAdminRole,
   type AuthAccount,
@@ -44,6 +45,7 @@ export function toAuthenticatedUser(account: AuthAccount, profile: UserProfile):
     name: profile.name,
     role: profile.role,
     isAdmin: isAdminRole(profile.role),
+    permissions: resolvePermissions(profile.role),
     profile,
   };
 }
