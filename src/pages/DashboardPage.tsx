@@ -1,8 +1,8 @@
 import {
   AlarmClock,
   Boxes,
-  CalendarClock,
   ClipboardList,
+  Factory,
   AlertTriangle,
   FileText,
   Images,
@@ -32,7 +32,6 @@ import { StatusBreakdown, type StatusRow } from '@/features/dashboard/components
 import { UpcomingDeliveries } from '@/features/dashboard/components/UpcomingDeliveries';
 import { useDashboardData } from '@/features/dashboard/hooks/use-dashboard-data';
 import { formatMoney } from '@/lib/format';
-import { DUE_SOON_DAYS } from '@/features/dashboard/services/dashboard-metrics';
 import { ENQUIRY_STATUSES, ENQUIRY_STATUS_LABELS } from '@/features/enquiries/types';
 import { JOB_STATUSES, JOB_STATUS_LABELS } from '@/features/jobs/types';
 
@@ -139,18 +138,26 @@ export function DashboardPage() {
             {data.canSeeJobs ? (
               <>
                 <KpiCard
-                  label="Active jobs"
+                  label="Open jobs"
                   value={data.jobSummary.active}
                   icon={ClipboardList}
+                  hint="Not yet delivered or cancelled"
                   to={ROUTES.jobs}
                 />
                 <KpiCard
-                  label="Jobs due soon"
-                  value={data.jobSummary.dueSoon.length}
-                  icon={CalendarClock}
-                  hint={`Next ${String(DUE_SOON_DAYS)} days, overdue counted separately`}
-                  tone="warning"
-                  to={ROUTES.jobs}
+                  label="In production"
+                  value={data.jobSummary.byStatus['in-progress']}
+                  icon={Factory}
+                  hint="On the shop floor now"
+                  to={ROUTES.production}
+                />
+                <KpiCard
+                  label="Overdue"
+                  value={data.jobSummary.overdue.length}
+                  icon={AlertTriangle}
+                  hint="Past the delivery date and still open"
+                  tone="danger"
+                  to={ROUTES.scheduling}
                 />
                 <KpiCard
                   label="Ready for pickup"
@@ -162,31 +169,19 @@ export function DashboardPage() {
             ) : null}
 
             {data.canSeeProduction &&
-            (data.productionSummary.overdue > 0 ||
-              data.productionSummary.onHold > 0 ||
-              data.productionSummary.unassigned > 0) ? (
-              <>
-                <KpiCard
-                  label="Overdue in production"
-                  value={data.productionSummary.overdue}
-                  icon={AlertTriangle}
-                  hint="Past the delivery date, still on the floor"
-                  tone="warning"
-                  to={ROUTES.scheduling}
-                />
-                <KpiCard
-                  label="Stopped"
-                  value={data.productionSummary.onHold}
-                  icon={PauseCircle}
-                  hint={
-                    data.productionSummary.unassigned > 0
-                      ? `${String(data.productionSummary.unassigned)} stages unassigned`
-                      : 'Every stage has somebody on it'
-                  }
-                  tone="warning"
-                  to={ROUTES.production}
-                />
-              </>
+            (data.productionSummary.onHold > 0 || data.productionSummary.unassigned > 0) ? (
+              <KpiCard
+                label="Stopped"
+                value={data.productionSummary.onHold}
+                icon={PauseCircle}
+                hint={
+                  data.productionSummary.unassigned > 0
+                    ? `${String(data.productionSummary.unassigned)} stages unassigned`
+                    : 'Every stage has somebody on it'
+                }
+                tone="warning"
+                to={ROUTES.production}
+              />
             ) : null}
 
             {data.canSeeDesigns &&
@@ -234,7 +229,7 @@ export function DashboardPage() {
               </>
             ) : null}
 
-            {data.canSeeInventory && data.inventorySummary.low > 0 ? (
+            {data.canSeeInventory ? (
               <KpiCard
                 label="Low stock"
                 value={data.inventorySummary.low}
@@ -308,7 +303,9 @@ export function DashboardPage() {
             />
           ) : null}
 
-          <RecentUpdates updates={data.recentUpdates} />
+          {data.canSeeCustomers || data.canSeeEnquiries || data.canSeeJobs ? (
+            <RecentUpdates updates={data.recentUpdates} />
+          ) : null}
         </>
       )}
 

@@ -21,10 +21,13 @@ function describe(error: unknown, fallback: string): string {
   return error instanceof AppError ? error.message : fallback;
 }
 
-export function useUsers(): UseQueryResult<UserProfile[], Error> {
+export function useUsers(
+  options: { enabled?: boolean } = {},
+): UseQueryResult<UserProfile[], Error> {
   return useQuery({
     queryKey: USERS_QUERY_KEY,
     queryFn: listUserProfiles,
+    enabled: options.enabled ?? true,
   });
 }
 

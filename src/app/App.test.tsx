@@ -95,14 +95,14 @@ describe('application shell', () => {
     expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
   });
 
-  it('shows a placeholder for modules that are not implemented', async () => {
-    // Billing and inventory are real from Module 10; reports is still to come.
+  it('has no unbuilt modules left to placeholder', async () => {
+    // Every navigation item leads to a real screen now, so the "coming soon"
+    // page and its badge are gone rather than sitting there unreachable.
     renderAt('/reports');
 
-    expect(
-      await screen.findByRole('heading', { name: 'Dashboard & Reports', level: 1 }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Not implemented')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Reports', level: 1 })).toBeInTheDocument();
+    expect(screen.queryByText('Not implemented')).not.toBeInTheDocument();
+    expect(screen.queryByText('Soon')).not.toBeInTheDocument();
   });
 
   it('renders the sign-in screen in the auth layout when signed out', async () => {

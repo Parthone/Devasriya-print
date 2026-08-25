@@ -513,8 +513,8 @@ who recorded it and whatever the customer said.
 
 ### No tax here
 
-Module 6 is deliberately tax-neutral. GST belongs to invoicing in Module 11, and
-no placeholder tax fields were added to the quotation.
+Module 6 is deliberately tax-neutral, and so is the invoicing that followed it
+in Module 10: no placeholder tax fields were added to either document.
 
 ## Designs and approvals
 
@@ -749,7 +749,7 @@ year, four digits. `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` takes a row
 lock held until the caller's transaction commits, so two people creating at the
 same moment cannot be handed the same number, and a rolled-back insert gives its
 number back. The series stays gapless, which statutory invoice numbering will
-need in Module 11. The financial year is computed in the browser in
+need in Module 10. The financial year is computed in the browser in
 `Asia/Kolkata` and passed in: the database server's timezone is not the
 business's timezone.
 

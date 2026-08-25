@@ -15,11 +15,13 @@ export interface ModuleDefinition {
 }
 
 /**
- * The build roadmap - one entry per module, in the order they will be built.
+ * The build roadmap - one entry per module actually built, in order.
  *
- * This is the single source of truth referenced by docs/MODULES.md, the
- * dashboard roadmap card and the "not implemented" placeholder pages. Each
- * module flips its own status when it is delivered.
+ * This is the single source of truth referenced by docs/MODULES.md and the
+ * dashboard roadmap footer. The
+ * numbering matches the commit history: where two planned areas were delivered
+ * as one module they appear here as one entry, because a roadmap that does not
+ * describe what shipped is worse than no roadmap.
  */
 export const MODULES: ModuleDefinition[] = [
   {
@@ -105,7 +107,6 @@ export const MODULES: ModuleDefinition[] = [
     title: 'Measurements & Price Calculation',
     description: 'Measurement units, a rate card and decimal-safe price calculation on every job.',
     status: 'done',
-    route: ROUTES.measurements,
     scope: [
       'Rate card of products with default rates',
       'Area, running length, per piece and flat pricing',
@@ -164,73 +165,50 @@ export const MODULES: ModuleDefinition[] = [
   },
   {
     index: 9,
-    id: 'assignments',
+    id: 'operations',
     title: 'Operations Control',
-    description: 'Who is doing what, what nobody has picked up, and what is running late.',
+    description:
+      'Who is doing what, what nobody has picked up, what is running late, and the deadline queues.',
     status: 'done',
     route: ROUTES.scheduling,
     scope: [
       'Assign and reassign stages to active employees only',
       'My work, unassigned work, and per-employee workload counts',
       'Department and employee filters on the board',
-      'Overdue, due today and due soon, with priority highlighting',
+      'Overdue, due today and due soon queues, with priority highlighting',
+      'Delivery dates read live from the job, so rescheduling moves the board',
       'Reassignment recorded in the production history, from and to',
     ],
   },
   {
     index: 10,
-    id: 'deadlines',
-    title: 'Deadlines & Pending Work',
-    description: 'Due dates, pending work queues and overdue alerts.',
-    status: 'planned',
-    route: ROUTES.scheduling,
+    id: 'billing',
+    title: 'Billing, Payments & Inventory',
+    description:
+      'Invoices from priced jobs, payment history, material stock and job-wise consumption.',
+    status: 'done',
+    route: ROUTES.billing,
     scope: [
-      'Delivery dates per job and stage',
-      'Pending and overdue queues',
-      'Daily work list per department',
-      'Escalation for missed deadlines',
+      'Invoices raised from the job pricing snapshot, with optional discount',
+      'Part payments, payment history and outstanding balance',
+      'Overpayment refused by the database, under a row lock',
+      'Materials master with stock in, stock out and low-stock levels',
+      'Consumption linked to jobs; stock can never go below zero',
     ],
   },
   {
     index: 11,
-    id: 'billing',
-    title: 'Billing & Payments',
-    description: 'Invoices, advances, part payments and outstanding tracking.',
-    status: 'done',
-    route: ROUTES.billing,
-    scope: [
-      'Invoice generation from completed jobs',
-      'Advance and part payment recording',
-      'Outstanding and ageing view',
-      'Payment receipts',
-    ],
-  },
-  {
-    index: 12,
-    id: 'inventory',
-    title: 'Inventory & Materials',
-    description: 'Material stock, consumption against jobs and reorder levels.',
-    status: 'done',
-    route: ROUTES.inventory,
-    scope: [
-      'Material master with units and rates',
-      'Stock in and stock out entries',
-      'Consumption linked to jobs',
-      'Low-stock alerts',
-    ],
-  },
-  {
-    index: 13,
     id: 'reports',
-    title: 'Dashboard & Reports',
-    description: 'Business dashboard and operational reports.',
-    status: 'planned',
+    title: 'Dashboard, Reports & Final Polish',
+    description: 'The operational dashboard, printable reports with CSV export, and final polish.',
+    status: 'done',
     route: ROUTES.reports,
     scope: [
-      'Daily and monthly business summary',
-      'Sales, production and outstanding reports',
-      'Department and employee performance',
-      'Export to CSV and print',
+      'Dashboard KPIs, needs attention and recent activity, all role-aware',
+      'Jobs, sales, payments, inventory, workload and overdue reports',
+      'Date range and status filters on every report',
+      'CSV export of exactly what is on screen',
+      'Empty, loading and error states throughout',
     ],
   },
 ];

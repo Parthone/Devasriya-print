@@ -93,11 +93,6 @@ export function AppLayout() {
                 >
                   <item.icon className="size-4 shrink-0" aria-hidden="true" />
                   <span className="flex-1 truncate">{item.label}</span>
-                  {!item.enabled ? (
-                    <Badge variant="outline" className="text-[10px]">
-                      Soon
-                    </Badge>
-                  ) : null}
                 </NavLink>
               ))}
             </div>

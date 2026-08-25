@@ -1,25 +1,31 @@
 # Module roadmap
 
-Modules are built one at a time and approved before implementation starts. The
-machine-readable copy of this list lives in `src/constants/modules.ts` and drives
-the dashboard roadmap card and the placeholder pages - update both together.
+Modules were built one at a time and approved before implementation started.
+The machine-readable copy of this list lives in `src/constants/modules.ts` and
+drives the dashboard roadmap footer - update both together.
+
+The numbering below is the numbering that shipped. Where two planned areas were
+delivered as one module they appear here as one entry, because a roadmap that
+does not describe what was built is worse than no roadmap.
 
 | #   | Module                           | Status        | Notes                                        |
 | --- | -------------------------------- | ------------- | -------------------------------------------- |
 | 0   | Project Foundation               | **Delivered** | Tooling, shell, backend layer, design system |
 | 1   | Authentication & Users           | **Delivered** | Supabase Auth, profiles, protected routes    |
-| 2   | Roles & Permissions              | Planned       | RBAC in the UI and in security rules         |
-| 3   | Customer Management              | Planned       | Customer directory, contacts, GSTIN          |
-| 4   | Enquiries & Jobs                 | Planned       | Enquiry intake, conversion to jobs           |
-| 5   | Measurements & Price Calculation | Planned       | Rate cards, area pricing, taxes              |
-| 6   | Estimates & Quotations           | Planned       | Quotation builder, revisions, approval       |
-| 7   | Design Uploads & Approvals       | Planned       | Storage uploads, proofs, approval trail      |
-| 8   | Department Workflow              | Planned       | Production stages and job movement           |
-| 9   | Employee Assignment              | Planned       | Assignment and workload                      |
-| 10  | Deadlines & Pending Work         | Planned       | Due dates, queues, escalation                |
-| 11  | Billing & Payments               | Planned       | Invoices, advances, outstanding              |
-| 12  | Inventory & Materials            | Planned       | Stock, consumption, reorder levels           |
-| 13  | Dashboard & Reports              | Planned       | Business summary and reports                 |
+| 2   | Roles & Permissions              | **Delivered** | RBAC in the UI and in the security rules     |
+| 3   | Customer Management              | **Delivered** | Customer directory, contacts, GSTIN          |
+| 4   | Enquiries & Jobs                 | **Delivered** | Enquiry intake, conversion to jobs           |
+| 5   | Measurements & Price Calculation | **Delivered** | Rate card, area pricing, integer paise       |
+| 6   | Estimates & Quotations           | **Delivered** | Quotation snapshot, states, approval         |
+| 7   | Design Uploads & Approvals       | **Delivered** | Versions, customer portal, approval trail    |
+| 8   | Department Workflow              | **Delivered** | Production stages and job movement           |
+| 9   | Operations Control               | **Delivered** | Assignment, workload, deadline queues        |
+| 10  | Billing, Payments & Inventory    | **Delivered** | Invoices, payments, stock and consumption    |
+| 11  | Dashboard, Reports & Polish      | **Delivered** | KPIs, six reports with CSV, final polish     |
+
+The backend moved from Firebase to Supabase between Modules 7 and 8; that piece
+of work is written up below under its own heading rather than as a module,
+because it changed no feature.
 
 ## Module 0 - Project Foundation (delivered)
 
@@ -386,8 +392,8 @@ and the rules check that the recorded name is the signed-in user's own.
 
 **Deliberately excluded**
 
-GST and tax - Module 6 is tax-neutral, and taxation belongs to invoicing in
-Module 11. No invoice, payment or PDF-library work was added.
+GST and tax - Module 6 is tax-neutral, and so is the invoicing that followed in
+Module 10. No invoice, payment or PDF-library work was added here.
 
 ## Module 7 - Design Uploads & Approvals (delivered)
 
@@ -478,11 +484,7 @@ Approving supersedes any earlier approval, so a job never has two.
 Department workflow (Module 8). Nothing here schedules or assigns production
 work; it only makes the approved artwork easy to find.
 
-## Next: Module 8 - Department Workflow
-
-Scope to be confirmed before implementation.
-
-## Module 8 - Supabase Backend Migration (delivered)
+## Supabase Backend Migration (delivered, between Modules 7 and 8)
 
 The backend moved from Firebase to Supabase in one module. Firebase Hosting
 stays; Firestore, Firebase Auth and Cloud Storage are gone.
@@ -611,7 +613,8 @@ doing a stage; it does not decide who should be.
 ## Module 9 - Operations Control (delivered)
 
 Module 8 answered "what happens next". This answers "who is doing it, and what
-is late".
+is late" - which is also the whole of what the roadmap had listed separately as
+"Deadlines & Pending Work", so the two were delivered together.
 
 **Assignment**
 
@@ -744,3 +747,66 @@ gated on `inventory:view` and only shown when something is actually low.
 GST, accounting software integration, purchase orders, vendors, payroll and
 warehouse management. This module bills a job and tracks a roll of flex; it is
 not an accounting package.
+
+## Module 11 - Dashboard, Reports & Final Polish (delivered)
+
+The last module. Nothing new was built that the business did not already have
+records for; this makes what is there readable.
+
+**Roadmap housekeeping**
+
+The roadmap said thirteen modules and twelve shipped, because two pairs were
+delivered together: "Deadlines & Pending Work" is what Operations Control
+actually is, and billing and inventory went out as one module. `MODULES.md` and
+`src/constants/modules.ts` now both say what was built, and every entry is
+delivered.
+
+**Dashboard**
+
+Seven headline numbers, each shown only to a role that may read the records
+behind it: customers, open jobs, in production, overdue, ready for pickup,
+outstanding payments and low stock. Overdue moved off the production tile and
+onto the job, so anyone with `jobs:view` sees it rather than only the shop
+floor. Low stock is shown even at zero, because "nothing is low" is the answer
+somebody came to the dashboard for.
+
+Needs Attention, the enquiry and job breakdowns, upcoming deliveries and recent
+activity all stayed, each gated on the same permission as the screen it
+summarises. Recent activity is hidden outright from a role that can read none of
+its three sources rather than showing an empty card.
+
+**Reports** (`/reports`)
+
+Six reports: jobs and production, sales and customers, payments and outstanding,
+inventory and low stock, employee workload, and overdue and pending work. Each
+has a period (all time, today, last 7, last 30, this financial year, or custom
+dates, in Asia/Kolkata business days, both ends inclusive) and its own status
+filter.
+
+Every report is built in the browser from the directory caches the rest of the
+application already holds, so opening one costs no extra database reads, and a
+source is only fetched when the chosen report names it and the role may read it.
+A role is only offered the reports it holds every permission for - a designer is
+never shown a money report, and production is never shown one either.
+
+CSV export writes the columns and rows that are on screen, unchanged, so the
+file cannot drift from the page. Fields are quoted per RFC 4180, and anything
+starting `=`, `+`, `-` or `@` is prefixed with a quote so a spreadsheet treats a
+customer called "-Sharma" as a name rather than a formula.
+
+**Final polish**
+
+Every navigation item now leads to a screen that exists. The `enabled` flag, the
+"Soon" badge and the "not implemented" placeholder page are gone rather than
+sitting there unreachable. Measurements & Pricing left the sidebar because it has
+no screen of its own - it is priced on the job. Settings became a real hub that
+shows a person exactly the sections their role can open.
+
+Wide report tables scroll inside their own box rather than pushing the page
+sideways, and every new screen has an empty, loading and error state.
+
+**Still true at the end**
+
+No Firebase backend code: `firebase-tools` is a dev dependency and `firebase.json`
+configures Hosting and nothing else. Demo mode still makes zero Supabase calls,
+reports included.

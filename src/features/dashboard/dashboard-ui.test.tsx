@@ -344,8 +344,8 @@ describe('KPI cards', () => {
     expect(screen.getByRole('link', { name: 'Customers: 1' })).toBeInTheDocument();
     // Two enquiries are still open; the converted one is not.
     expect(screen.getByRole('link', { name: 'Open enquiries: 2' })).toBeInTheDocument();
-    // Two jobs are active; the delivered one is not.
-    expect(screen.getByRole('link', { name: 'Active jobs: 2' })).toBeInTheDocument();
+    // Two jobs are open; the delivered one is not.
+    expect(screen.getByRole('link', { name: 'Open jobs: 2' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ready for pickup: 1' })).toBeInTheDocument();
   });
 
@@ -355,11 +355,11 @@ describe('KPI cards', () => {
     expect(screen.getByRole('link', { name: 'Follow-ups due: 2' })).toBeInTheDocument();
   });
 
-  it('keeps overdue jobs out of the due soon count', async () => {
+  it('counts jobs past their delivery date on their own tile', async () => {
     await renderAndSettle('owner');
 
     // One job is due tomorrow, one is two days overdue.
-    expect(screen.getByRole('link', { name: 'Jobs due soon: 1' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Overdue: 1' })).toBeInTheDocument();
   });
 
   it('counts draft quotations and the ones waiting on the customer', async () => {
@@ -395,7 +395,6 @@ describe('needs attention', () => {
   it('groups overdue and upcoming work separately', async () => {
     await renderAndSettle('owner');
 
-    // Scoped to the panel: "Jobs due soon" is also a KPI label.
     const panel = screen.getByText('Needs attention').closest('div[data-slot="card"]');
     expect(panel).not.toBeNull();
     const attention = within(panel as HTMLElement);
@@ -498,7 +497,7 @@ describe('role-aware sections', () => {
     await renderAndSettle('accounts');
 
     expect(screen.getByRole('link', { name: /^Customers: / })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Active jobs: / })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Open jobs: / })).toBeInTheDocument();
     expect(screen.getByText('Job overview')).toBeInTheDocument();
 
     // Accounts has no enquiries:view, so nothing about enquiries appears.
@@ -526,6 +525,36 @@ describe('role-aware sections', () => {
       expect(screen.getByText('Upcoming deliveries')).toBeInTheDocument();
     },
   );
+});
+
+describe('money and stock are role-aware', () => {
+  it('shows accounts the outstanding figure and never a production workload', async () => {
+    await renderAndSettle('accounts');
+
+    expect(screen.getByRole('link', { name: /^Outstanding: / })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Unpaid invoices: / })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Low stock: / })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Stopped: / })).not.toBeInTheDocument();
+  });
+
+  it('shows production the stock level but never what customers owe', async () => {
+    await renderAndSettle('production');
+
+    expect(screen.getByRole('link', { name: /^Low stock: / })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^In production: / })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Outstanding: / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Unpaid invoices: / })).not.toBeInTheDocument();
+  });
+
+  it('shows a viewer neither the money nor the stock', async () => {
+    await renderAndSettle('viewer');
+
+    expect(screen.queryByRole('link', { name: /^Outstanding: / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Low stock: / })).not.toBeInTheDocument();
+    // The queries behind them are never even asked for.
+    expect(mocks.listInvoices).not.toHaveBeenCalled();
+    expect(mocks.listInventoryItems).not.toHaveBeenCalled();
+  });
 });
 
 describe('quick actions', () => {

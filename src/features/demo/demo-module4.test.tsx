@@ -248,7 +248,7 @@ describe('demo dashboard', () => {
     // Two of the three demo enquiries are still open.
     expect(screen.getByRole('link', { name: 'Open enquiries: 2' })).toBeInTheDocument();
     // Both demo jobs are active.
-    expect(screen.getByRole('link', { name: 'Active jobs: 2' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open jobs: 2' })).toBeInTheDocument();
 
     expect(screen.getByText('Enquiry pipeline')).toBeInTheDocument();
     expect(screen.getByText('Job overview')).toBeInTheDocument();

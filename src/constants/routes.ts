@@ -11,7 +11,6 @@ import {
   Images,
   LayoutDashboard,
   MessageSquareText,
-  Ruler,
   Settings,
   UserCog,
   Users,
@@ -31,7 +30,6 @@ export const ROUTES = {
   enquiryDetail: '/enquiries/:enquiryId',
   jobs: '/jobs',
   jobDetail: '/jobs/:jobId',
-  measurements: '/measurements',
   estimates: '/estimates',
   estimateDetail: '/estimates/:estimateId',
   designs: '/designs',
@@ -62,8 +60,6 @@ export interface NavItem {
   label: string;
   path: string;
   icon: LucideIcon;
-  /** False until the module that owns this route is implemented. */
-  enabled: boolean;
   /**
    * Permission required to see the link and to open the route. The sidebar
    * hides what a user cannot open, and the route guard enforces the same rule
@@ -80,8 +76,9 @@ export interface NavSection {
 /**
  * Navigation model for the app shell.
  *
- * Items are listed with `enabled: false` so the roadmap is visible in the UI;
- * each module flips its own item to `true` when it is implemented.
+ * Every item leads to a screen that exists. While the roadmap was being built
+ * items carried an `enabled` flag and unbuilt ones rendered a placeholder; the
+ * roadmap is finished, so both are gone.
  */
 export const NAV_SECTIONS: NavSection[] = [
   {
@@ -91,7 +88,6 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Dashboard',
         path: ROUTES.dashboard,
         icon: LayoutDashboard,
-        enabled: true,
         permission: 'dashboard:view',
       },
     ],
@@ -103,35 +99,24 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Customers',
         path: ROUTES.customers,
         icon: Users,
-        enabled: true,
         permission: 'customers:view',
       },
       {
         label: 'Enquiries',
         path: ROUTES.enquiries,
         icon: MessageSquareText,
-        enabled: true,
         permission: 'enquiries:view',
       },
       {
         label: 'Jobs & Orders',
         path: ROUTES.jobs,
         icon: ClipboardList,
-        enabled: true,
         permission: 'jobs:view',
-      },
-      {
-        label: 'Measurements & Pricing',
-        path: ROUTES.measurements,
-        icon: Ruler,
-        enabled: false,
-        permission: 'estimates:view',
       },
       {
         label: 'Estimates',
         path: ROUTES.estimates,
         icon: FileText,
-        enabled: true,
         permission: 'estimates:view',
       },
     ],
@@ -143,28 +128,24 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Designs & Approvals',
         path: ROUTES.designs,
         icon: Images,
-        enabled: true,
         permission: 'designs:view',
       },
       {
         label: 'Production',
         path: ROUTES.production,
         icon: Factory,
-        enabled: true,
         permission: 'production:view',
       },
       {
         label: 'Deadlines',
         path: ROUTES.scheduling,
         icon: CalendarClock,
-        enabled: true,
         permission: 'production:view',
       },
       {
         label: 'Inventory',
         path: ROUTES.inventory,
         icon: Boxes,
-        enabled: true,
         permission: 'inventory:view',
       },
     ],
@@ -176,56 +157,48 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Billing & Payments',
         path: ROUTES.billing,
         icon: Wallet,
-        enabled: true,
         permission: 'billing:view',
       },
       {
         label: 'Employees',
         path: ROUTES.users,
         icon: UserCog,
-        enabled: true,
         permission: 'employees:view',
       },
       {
         label: 'Pickup Offices',
         path: ROUTES.locations,
         icon: Building2,
-        enabled: true,
         permission: 'settings:manage',
       },
       {
         label: 'Products & Rates',
         path: ROUTES.products,
         icon: Calculator,
-        enabled: true,
         permission: 'settings:manage',
       },
       {
         label: 'Production Stages',
         path: ROUTES.workflowStages,
         icon: Workflow,
-        enabled: true,
         permission: 'settings:manage',
       },
       {
         label: 'Roles & Permissions',
         path: ROUTES.roles,
         icon: ShieldCheck,
-        enabled: true,
         permission: 'settings:view',
       },
       {
         label: 'Reports',
         path: ROUTES.reports,
         icon: BarChart3,
-        enabled: false,
         permission: 'reports:view',
       },
       {
         label: 'Settings',
         path: ROUTES.settings,
         icon: Settings,
-        enabled: false,
         permission: 'settings:view',
       },
     ],
