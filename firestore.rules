@@ -11,7 +11,7 @@ rules_version = '2';
 //   auditLogs  (Module 2 - Roles & Permissions)
 //   customers  (Module 3 - Customer Management)
 //   enquiries, jobs, locations, counters  (Module 4 - Enquiries & Jobs)
-//   products  (Module 5 - Measurements & Pricing)
+//   products, jobPricing  (Module 5 - Measurements & Pricing)
 //
 // Authorisation mirrors the application permission matrix in
 // src/features/permissions/matrix.ts. Hidden UI is never the control: every
@@ -96,11 +96,15 @@ service cloud.firestore {
              && data.updatedBy is string;
     }
 
-    // Pricing lives on the job. Rules cannot walk every line of an array, so
-    // they check the shape and the totals that matter: the summary is money in
-    // whole paise, the total is never negative, an adjustment always carries a
-    // reason, and the number of lines is capped. Line by line validation is
-    // done by the zod schema at the data-access boundary.
+    // Pricing lives in its own collection so that reading it can be gated on
+    // estimates:view - Firestore has no field level read rules, so money kept
+    // on the job document would be readable by anyone who may read jobs.
+    //
+    // Rules cannot walk every line of an array, so they check the shape and the
+    // totals that matter: money is whole paise in rupees, the total is never
+    // negative, an adjustment always carries a reason, and the number of lines
+    // is capped. Line by line validation is done by the zod schema at the
+    // data-access boundary.
     function isValidMoney(value) {
       return value is map
              && value.keys().hasOnly(['paise', 'currency'])
@@ -108,20 +112,22 @@ service cloud.firestore {
              && value.currency == 'INR';
     }
 
-    function isValidPricing(data) {
-      let pricing = data.get('pricing', null);
-      return pricing == null
-             || (pricing.keys().hasOnly(['lines', 'subtotal', 'adjustment', 'total'])
-                 && pricing.lines is list
-                 && pricing.lines.size() <= 50
-                 && isValidMoney(pricing.subtotal)
-                 && isValidMoney(pricing.total)
-                 && pricing.total.paise >= 0
-                 && (pricing.adjustment == null
-                     || (pricing.adjustment.keys().hasOnly(['amount', 'reason'])
-                         && isValidMoney(pricing.adjustment.amount)
-                         && pricing.adjustment.reason is string
-                         && pricing.adjustment.reason.size() > 0)));
+    function isValidPricing(pricing) {
+      return pricing.keys().hasAll(['jobId', 'lines', 'subtotal', 'total',
+                                    'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+             && pricing.keys().hasOnly(['jobId', 'lines', 'subtotal', 'adjustment', 'total',
+                                        'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+             && pricing.lines is list
+             && pricing.lines.size() <= 50
+             && isValidMoney(pricing.subtotal)
+             && isValidMoney(pricing.total)
+             && pricing.total.paise >= 0
+             && pricing.updatedBy is string
+             && (pricing.get('adjustment', null) == null
+                 || (pricing.adjustment.keys().hasOnly(['amount', 'reason'])
+                     && isValidMoney(pricing.adjustment.amount)
+                     && pricing.adjustment.reason is string
+                     && pricing.adjustment.reason.size() > 0));
     }
 
     match /users/{userId} {
@@ -379,7 +385,7 @@ service cloud.firestore {
                                        'pickupLocationId', 'pickupLocationName',
                                        'contactPersonId', 'contactPersonName',
                                        'contactPersonMobile', 'assignedToId', 'assignedToName',
-                                       'status', 'pricing', 'createdAt', 'createdBy',
+                                       'status', 'createdAt', 'createdBy',
                                        'updatedAt', 'updatedBy'])
                && data.jobNumber.matches('^JOB-[0-9]{4}-[0-9]{4}$')
                && isPresentString(data.customerId)
@@ -412,12 +418,7 @@ service cloud.firestore {
                     && request.resource.data.updatedBy == request.auth.uid
                     // Changing who is responsible is a separate permission.
                     && (request.resource.data.assignedToId == resource.data.assignedToId
-                        || can('jobs:assign'))
-                    // Money is estimate work. jobs:edit alone - which production
-                    // holds - must never be enough to change a price.
-                    && (request.resource.data.get('pricing', null)
-                          == resource.data.get('pricing', null)
-                        || (can('estimates:create') && isValidPricing(request.resource.data)));
+                        || can('jobs:assign'));
 
       allow delete: if false;
     }
@@ -456,6 +457,36 @@ service cloud.firestore {
                     && request.resource.data.createdAt == resource.data.createdAt
                     && request.resource.data.createdBy == resource.data.createdBy
                     && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Job pricing. Kept out of the job document so that seeing a job never
+    // means seeing what it costs: reading needs estimates:view, which designer
+    // and production do not have. Writing needs both jobs:edit and
+    // estimates:create, so production - which may move a job along - still
+    // cannot change a price.
+    match /jobPricing/{jobId} {
+      function mayPrice() {
+        return can('jobs:edit') && can('estimates:create');
+      }
+
+      allow get, list: if can('estimates:view');
+
+      allow create: if mayPrice()
+                    && isValidPricing(request.resource.data)
+                    && request.resource.data.jobId == jobId
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid;
+
+      allow update: if mayPrice()
+                    && resource != null
+                    && isValidPricing(request.resource.data)
+                    && request.resource.data.jobId == resource.data.jobId
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid;
+
+      // Pricing history stays with the job it belongs to.
       allow delete: if false;
     }
 

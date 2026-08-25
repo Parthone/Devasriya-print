@@ -6,8 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppProviders } from '@/app/providers/AppProviders';
 import { routes } from '@/app/router/routes';
 import { ROUTES } from '@/constants/routes';
+import type { JobPricingDocument } from '@/features/jobs/pricing-types';
 import type { Job } from '@/features/jobs/types';
-import type { JobPricing } from '@/lib/pricing';
 import type { Product } from '@/features/products/types';
 import type { AuthAccount, UserProfile, UserRole } from '@/types/auth';
 
@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   getUserProfile: vi.fn(),
   findJob: vi.fn(),
   listJobs: vi.fn(),
-  updateJobPricing: vi.fn(),
+  findJobPricing: vi.fn(),
+  saveJobPricing: vi.fn(),
   listProducts: vi.fn(),
 }));
 
@@ -49,7 +50,12 @@ vi.mock('@/features/jobs/services/job.service', () => ({
   createJob: vi.fn(),
   updateJob: vi.fn(),
   assignJob: vi.fn(),
-  updateJobPricing: mocks.updateJobPricing,
+}));
+
+vi.mock('@/features/jobs/services/job-pricing.service', () => ({
+  jobPricingRepository: {},
+  findJobPricing: mocks.findJobPricing,
+  saveJobPricing: mocks.saveJobPricing,
 }));
 
 vi.mock('@/features/products/services/product.service', () => ({
@@ -95,38 +101,38 @@ const PRODUCT: Product = {
   updatedBy: 'uid-owner',
 };
 
-function jobWith(pricing: JobPricing | null): Job {
-  return {
-    id: 'j1',
-    jobNumber: 'JOB-2627-0001',
-    customerId: 'c1',
-    customerName: 'Ravi Kumar',
-    customerMobile: '9812300011',
-    enquiryId: null,
-    enquiryNumber: null,
-    jobDate: NOW,
-    title: 'Wedding cards',
-    requirementText: 'Gold foil',
-    requirementAudio: null,
-    priority: 'normal',
-    expectedDeliveryDate: null,
-    pickupLocationId: null,
-    pickupLocationName: null,
-    contactPersonId: null,
-    contactPersonName: null,
-    contactPersonMobile: null,
-    assignedToId: null,
-    assignedToName: null,
-    status: 'open',
-    pricing,
-    createdAt: NOW,
-    createdBy: 'uid-owner',
-    updatedAt: NOW,
-    updatedBy: 'uid-owner',
-  };
-}
+const JOB: Job = {
+  id: 'j1',
+  jobNumber: 'JOB-2627-0001',
+  customerId: 'c1',
+  customerName: 'Ravi Kumar',
+  customerMobile: '9812300011',
+  enquiryId: null,
+  enquiryNumber: null,
+  jobDate: NOW,
+  title: 'Wedding cards',
+  requirementText: 'Gold foil',
+  requirementAudio: null,
+  priority: 'normal',
+  expectedDeliveryDate: null,
+  pickupLocationId: null,
+  pickupLocationName: null,
+  contactPersonId: null,
+  contactPersonName: null,
+  contactPersonMobile: null,
+  assignedToId: null,
+  assignedToName: null,
+  status: 'open',
+  createdAt: NOW,
+  createdBy: 'uid-owner',
+  updatedAt: NOW,
+  updatedBy: 'uid-owner',
+};
 
-const PRICED_JOB = jobWith({
+/** Pricing is its own document now, read only by roles with estimates:view. */
+const PRICING: JobPricingDocument = {
+  id: 'j1',
+  jobId: 'j1',
   lines: [
     {
       id: 'line-1',
@@ -146,7 +152,11 @@ const PRICED_JOB = jobWith({
   subtotal: rupees(1200),
   adjustment: null,
   total: rupees(1200),
-});
+  createdAt: NOW,
+  createdBy: 'uid-owner',
+  updatedAt: NOW,
+  updatedBy: 'uid-owner',
+};
 
 function profileFor(role: UserRole): UserProfile {
   return {
@@ -182,10 +192,11 @@ function renderAsRole(role: UserRole, path = '/jobs/j1') {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.findJob.mockResolvedValue(PRICED_JOB);
-  mocks.listJobs.mockResolvedValue({ jobs: [PRICED_JOB], capReached: false, cap: 500 });
+  mocks.findJob.mockResolvedValue(JOB);
+  mocks.listJobs.mockResolvedValue({ jobs: [JOB], capReached: false, cap: 500 });
+  mocks.findJobPricing.mockResolvedValue(PRICING);
   mocks.listProducts.mockResolvedValue([PRODUCT]);
-  mocks.updateJobPricing.mockResolvedValue(undefined);
+  mocks.saveJobPricing.mockResolvedValue(undefined);
 });
 
 describe('who can see pricing', () => {
@@ -239,7 +250,7 @@ describe('who can edit pricing', () => {
 describe('adding a priced item', () => {
   it('shows the working live and saves what the preview showed', async () => {
     const user = userEvent.setup({ delay: null });
-    mocks.findJob.mockResolvedValue(jobWith(null));
+    mocks.findJobPricing.mockResolvedValue(null);
     renderAsRole('sales');
 
     await user.click(await screen.findByRole('button', { name: /add item/i }));
@@ -259,9 +270,9 @@ describe('adding a priced item', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add item' }));
 
     await waitFor(() => {
-      expect(mocks.updateJobPricing).toHaveBeenCalledTimes(1);
+      expect(mocks.saveJobPricing).toHaveBeenCalledTimes(1);
     });
-    const [jobId, pricing] = mocks.updateJobPricing.mock.calls[0] as [
+    const [jobId, pricing] = mocks.saveJobPricing.mock.calls[0] as [
       string,
       {
         lines: { lineAmount: { paise: number } }[];
@@ -278,7 +289,7 @@ describe('adding a priced item', () => {
 
   it('prefills the rate from the rate card but lets it be changed', async () => {
     const user = userEvent.setup({ delay: null });
-    mocks.findJob.mockResolvedValue(jobWith(null));
+    mocks.findJobPricing.mockResolvedValue(null);
     renderAsRole('sales');
 
     await user.click(await screen.findByRole('button', { name: /add item/i }));
@@ -297,9 +308,9 @@ describe('adding a priced item', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add item' }));
 
     await waitFor(() => {
-      expect(mocks.updateJobPricing).toHaveBeenCalled();
+      expect(mocks.saveJobPricing).toHaveBeenCalled();
     });
-    const [, pricing] = mocks.updateJobPricing.mock.calls[0] as [
+    const [, pricing] = mocks.saveJobPricing.mock.calls[0] as [
       string,
       {
         lines: {
@@ -316,7 +327,7 @@ describe('adding a priced item', () => {
 
   it('refuses to save a line with no measurements', async () => {
     const user = userEvent.setup({ delay: null });
-    mocks.findJob.mockResolvedValue(jobWith(null));
+    mocks.findJobPricing.mockResolvedValue(null);
     renderAsRole('sales');
 
     await user.click(await screen.findByRole('button', { name: /add item/i }));
@@ -327,7 +338,7 @@ describe('adding a priced item', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Add item' }));
 
     expect(within(dialog).getAllByText(/Enter a width/i).length).toBeGreaterThan(0);
-    expect(mocks.updateJobPricing).not.toHaveBeenCalled();
+    expect(mocks.saveJobPricing).not.toHaveBeenCalled();
   });
 });
 
@@ -342,9 +353,9 @@ describe('editing and removing lines', () => {
     await user.click(removeButton!);
 
     await waitFor(() => {
-      expect(mocks.updateJobPricing).toHaveBeenCalled();
+      expect(mocks.saveJobPricing).toHaveBeenCalled();
     });
-    const [, pricing] = mocks.updateJobPricing.mock.calls[0] as [
+    const [, pricing] = mocks.saveJobPricing.mock.calls[0] as [
       string,
       { lines: unknown[]; subtotal: { paise: number }; total: { paise: number } },
     ];
@@ -367,9 +378,9 @@ describe('editing and removing lines', () => {
     await user.click(within(dialog).getByRole('button', { name: /save adjustment/i }));
 
     await waitFor(() => {
-      expect(mocks.updateJobPricing).toHaveBeenCalled();
+      expect(mocks.saveJobPricing).toHaveBeenCalled();
     });
-    const [, pricing] = mocks.updateJobPricing.mock.calls[0] as [
+    const [, pricing] = mocks.saveJobPricing.mock.calls[0] as [
       string,
       { adjustment: { amount: { paise: number }; reason: string }; total: { paise: number } },
     ];
@@ -394,7 +405,7 @@ describe('editing and removing lines', () => {
     expect(
       await within(dialog).findByText(/would make the total less than zero/i),
     ).toBeInTheDocument();
-    expect(mocks.updateJobPricing).not.toHaveBeenCalled();
+    expect(mocks.saveJobPricing).not.toHaveBeenCalled();
   });
 });
 
@@ -415,4 +426,35 @@ describe('rate card settings', () => {
       expect(await screen.findByRole('heading', { name: 'Access denied' })).toBeInTheDocument();
     },
   );
+});
+
+describe('pricing is never requested without permission', () => {
+  it.each(['designer', 'production'] as UserRole[])(
+    'does not ask for pricing at all for %s',
+    async (role) => {
+      renderAsRole(role);
+
+      await screen.findByRole('heading', { name: 'JOB-2627-0001', level: 1 });
+      expect(mocks.findJob).toHaveBeenCalled();
+      // No denied request is sent: the query is never enabled.
+      expect(mocks.findJobPricing).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['owner', 'admin', 'sales', 'accounts', 'viewer'] as UserRole[])(
+    'asks for pricing for %s',
+    async (role) => {
+      renderAsRole(role);
+
+      await screen.findByText('Measurements & pricing');
+      expect(mocks.findJobPricing).toHaveBeenCalledWith('j1');
+    },
+  );
+
+  it('shows an unpriced job as unpriced rather than as an error', async () => {
+    mocks.findJobPricing.mockResolvedValue(null);
+    renderAsRole('sales');
+
+    expect(await screen.findByText(/Nothing priced yet/i)).toBeInTheDocument();
+  });
 });

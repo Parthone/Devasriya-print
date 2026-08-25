@@ -2,8 +2,6 @@ import { z } from 'zod';
 
 import { fromDateInputValue, toDateInputValue } from '@/features/enquiries/types';
 import { EMPTY_PICKUP, type PickupSnapshot } from '@/features/locations/types';
-import { jobPricingSchema } from '@/features/jobs/pricing-schema';
-import type { JobPricing } from '@/lib/pricing';
 import type { AudioAttachment } from '@/types/attachments';
 import type { Entity, Id } from '@/types/common';
 import { AppError } from '@/types/common';
@@ -64,11 +62,6 @@ export interface Job extends Entity, PickupSnapshot {
   assignedToId?: Id | null;
   assignedToName?: string | null;
   status: JobStatus;
-  /**
-   * Measurements and money for this job. Null until somebody prices it.
-   * Line rates are snapshots: editing the rate card never moves them.
-   */
-  pricing?: JobPricing | null;
 }
 
 export const jobFormSchema = z.object({
@@ -179,7 +172,6 @@ const jobSchema = z.object({
   assignedToId: z.string().nullable().default(null),
   assignedToName: z.string().nullable().default(null),
   status: z.enum(JOB_STATUSES),
-  pricing: jobPricingSchema.nullable().default(null),
   createdAt: z.date(),
   createdBy: z.string(),
   updatedAt: z.date(),

@@ -4,6 +4,7 @@ import {
   DEMO_EMPLOYEES,
   DEMO_ENQUIRIES,
   DEMO_JOBS,
+  DEMO_JOB_PRICING,
   DEMO_LOCATIONS,
   DEMO_OWNER_UID,
   DEMO_PRODUCTS,
@@ -11,9 +12,11 @@ import {
 import type { AuditEvent } from '@/features/audit/types';
 import type { Customer, CustomerInput } from '@/features/customers/types';
 import type { Enquiry } from '@/features/enquiries/types';
+import type { JobPricingDocument } from '@/features/jobs/pricing-types';
 import type { Job } from '@/features/jobs/types';
 import type { Location, LocationInput } from '@/features/locations/types';
 import type { Product, ProductInput } from '@/features/products/types';
+import type { JobPricing } from '@/lib/pricing';
 import type { UserProfile } from '@/types/auth';
 import type { Id } from '@/types/common';
 
@@ -51,6 +54,7 @@ export function resetDemoStore(): void {
   enquiries = [...DEMO_ENQUIRIES];
   jobs = [...DEMO_JOBS];
   products = [...DEMO_PRODUCTS];
+  jobPricing = new Map(DEMO_JOB_PRICING.map((entry) => [entry.jobId, entry]));
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
   auditEvents = [...DEMO_AUDIT_EVENTS];
@@ -239,6 +243,27 @@ export function nextDemoNumber(prefix: string, yearKey: string, existing: string
 // ---------------------------------------------------------------------------
 
 let products: Product[] = [...DEMO_PRODUCTS];
+let jobPricing = new Map<Id, JobPricingDocument>(
+  DEMO_JOB_PRICING.map((entry) => [entry.jobId, entry]),
+);
+
+export function demoJobPricing(jobId: Id): JobPricingDocument | null {
+  return jobPricing.get(jobId) ?? null;
+}
+
+export function setDemoJobPricing(jobId: Id, pricing: JobPricing, actorId: Id): void {
+  const now = new Date();
+  const existing = jobPricing.get(jobId);
+  jobPricing.set(jobId, {
+    ...pricing,
+    id: jobId,
+    jobId,
+    createdAt: existing?.createdAt ?? now,
+    createdBy: existing?.createdBy ?? actorId,
+    updatedAt: now,
+    updatedBy: actorId,
+  });
+}
 
 export function demoProducts(): Product[] {
   return [...products].sort((a, b) => a.name.localeCompare(b.name));

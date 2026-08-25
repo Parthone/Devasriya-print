@@ -4,7 +4,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 
@@ -67,6 +67,7 @@ function productDoc(actor: string, overrides: Record<string, unknown> = {}) {
 
 function pricingDoc(overrides: Record<string, unknown> = {}) {
   return {
+    jobId: JOB_ID,
     lines: [
       {
         id: 'line-1',
@@ -86,6 +87,10 @@ function pricingDoc(overrides: Record<string, unknown> = {}) {
     subtotal: rupees(600),
     adjustment: null,
     total: rupees(600),
+    createdAt: NOW,
+    createdBy: UID.owner,
+    updatedAt: NOW,
+    updatedBy: UID.owner,
     ...overrides,
   };
 }
@@ -112,7 +117,6 @@ function jobDoc(actor: string, overrides: Record<string, unknown> = {}) {
     assignedToId: null,
     assignedToName: null,
     status: 'open',
-    pricing: null,
     createdAt: NOW,
     createdBy: actor,
     updatedAt: NOW,
@@ -145,6 +149,7 @@ beforeEach(async () => {
     }
     await setDoc(doc(db, 'jobs', JOB_ID), jobDoc(UID.owner));
     await setDoc(doc(db, 'products', 'product-1'), productDoc(UID.owner));
+    await setDoc(doc(db, 'jobPricing', JOB_ID), pricingDoc());
   });
 });
 
@@ -227,35 +232,94 @@ describe('rate card', () => {
   });
 });
 
-describe('pricing on a job', () => {
-  const canPrice: UserRole[] = ['owner', 'admin', 'sales'];
+describe('reading job pricing', () => {
+  const canRead: UserRole[] = ['owner', 'admin', 'sales', 'accounts', 'viewer'];
+  const cannotRead: UserRole[] = ['designer', 'production'];
 
-  it.each(canPrice)('lets %s price a job', async (role) => {
+  it.each(canRead)('lets %s read pricing, because it holds estimates:view', async (role) => {
     const db = testEnv.authenticatedContext(UID[role]).firestore();
-    await assertSucceeds(
-      updateDoc(doc(db, 'jobs', JOB_ID), { pricing: pricingDoc(), updatedBy: UID[role] }),
+    await assertSucceeds(getDoc(doc(db, 'jobPricing', JOB_ID)));
+    await assertSucceeds(getDocs(collection(db, 'jobPricing')));
+  });
+
+  it.each(cannotRead)('stops %s reading pricing at the database itself', async (role) => {
+    const db = testEnv.authenticatedContext(UID[role]).firestore();
+    await assertFails(getDoc(doc(db, 'jobPricing', JOB_ID)));
+    await assertFails(getDocs(collection(db, 'jobPricing')));
+  });
+
+  it.each(cannotRead)('still lets %s read the job itself', async (role) => {
+    const db = testEnv.authenticatedContext(UID[role]).firestore();
+    await assertSucceeds(getDoc(doc(db, 'jobs', JOB_ID)));
+    await assertSucceeds(getDocs(collection(db, 'jobs')));
+  });
+
+  it('keeps money off the job document entirely', async () => {
+    const db = testEnv.authenticatedContext(UID.sales).firestore();
+
+    // Even somebody who may price a job cannot put money back on the job.
+    await assertFails(
+      updateDoc(doc(db, 'jobs', JOB_ID), { pricing: pricingDoc(), updatedBy: UID.sales }),
+    );
+    await assertFails(
+      updateDoc(doc(db, 'jobs', JOB_ID), { total: rupees(600), updatedBy: UID.sales }),
     );
   });
 
-  it('stops production changing the price, even though it may edit the job', async () => {
+  it('denies a signed-out client and a deactivated employee', async () => {
+    await assertFails(
+      getDoc(doc(testEnv.unauthenticatedContext().firestore(), 'jobPricing', JOB_ID)),
+    );
+
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'users', UID.accounts), {
+        ...staffProfile('accounts'),
+        isActive: false,
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.accounts).firestore();
+    await assertFails(getDoc(doc(db, 'jobPricing', JOB_ID)));
+  });
+});
+
+describe('writing job pricing', () => {
+  const canPrice: UserRole[] = ['owner', 'admin', 'sales'];
+
+  it.each(canPrice)('lets %s create and change pricing', async (role) => {
+    const db = testEnv.authenticatedContext(UID[role]).firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(db, 'jobPricing', JOB_ID), {
+        subtotal: rupees(900),
+        total: rupees(900),
+        updatedBy: UID[role],
+      }),
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'jobPricing', `job-new-${role}`),
+        pricingDoc({ jobId: `job-new-${role}`, createdBy: UID[role], updatedBy: UID[role] }),
+      ),
+    );
+  });
+
+  it('stops production changing a price, even though it may edit the job', async () => {
     const db = testEnv.authenticatedContext(UID.production).firestore();
 
-    // It can still move the job along.
     await assertSucceeds(
       updateDoc(doc(db, 'jobs', JOB_ID), { status: 'in-progress', updatedBy: UID.production }),
     );
-    // But not touch the money.
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), { pricing: pricingDoc(), updatedBy: UID.production }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), { total: rupees(1), updatedBy: UID.production }),
     );
   });
 
   it.each(['designer', 'accounts', 'viewer'] as UserRole[])(
-    'stops %s pricing a job',
+    'stops %s changing a price',
     async (role) => {
       const db = testEnv.authenticatedContext(UID[role]).firestore();
       await assertFails(
-        updateDoc(doc(db, 'jobs', JOB_ID), { pricing: pricingDoc(), updatedBy: UID[role] }),
+        updateDoc(doc(db, 'jobPricing', JOB_ID), { total: rupees(1), updatedBy: UID[role] }),
       );
     },
   );
@@ -263,11 +327,9 @@ describe('pricing on a job', () => {
   it('refuses a total below zero', async () => {
     const db = testEnv.authenticatedContext(UID.sales).firestore();
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({
-          adjustment: { amount: rupees(-700), reason: 'Too much' },
-          total: rupees(-100),
-        }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), {
+        adjustment: { amount: rupees(-700), reason: 'Too much' },
+        total: rupees(-100),
         updatedBy: UID.sales,
       }),
     );
@@ -277,21 +339,16 @@ describe('pricing on a job', () => {
     const db = testEnv.authenticatedContext(UID.sales).firestore();
 
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({
-          adjustment: { amount: rupees(-100), reason: '' },
-          total: rupees(500),
-        }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), {
+        adjustment: { amount: rupees(-100), reason: '' },
+        total: rupees(500),
         updatedBy: UID.sales,
       }),
     );
-
     await assertSucceeds(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({
-          adjustment: { amount: rupees(-100), reason: 'Repeat customer' },
-          total: rupees(500),
-        }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), {
+        adjustment: { amount: rupees(-100), reason: 'Repeat customer' },
+        total: rupees(500),
         updatedBy: UID.sales,
       }),
     );
@@ -301,14 +358,14 @@ describe('pricing on a job', () => {
     const db = testEnv.authenticatedContext(UID.sales).firestore();
 
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({ total: { paise: 600.5, currency: 'INR' } }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), {
+        total: { paise: 600.5, currency: 'INR' },
         updatedBy: UID.sales,
       }),
     );
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({ subtotal: { paise: 600, currency: 'USD' } }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), {
+        subtotal: { paise: 600, currency: 'USD' },
         updatedBy: UID.sales,
       }),
     );
@@ -323,32 +380,32 @@ describe('pricing on a job', () => {
     }));
 
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({ lines: tooMany }),
-        updatedBy: UID.sales,
-      }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), { lines: tooMany, updatedBy: UID.sales }),
     );
   });
 
-  it('refuses unexpected fields inside the pricing summary', async () => {
+  it('refuses unexpected fields, such as a tax total', async () => {
     const db = testEnv.authenticatedContext(UID.sales).firestore();
     await assertFails(
-      updateDoc(doc(db, 'jobs', JOB_ID), {
-        pricing: pricingDoc({ gstAmount: rupees(108) }),
-        updatedBy: UID.sales,
-      }),
+      updateDoc(doc(db, 'jobPricing', JOB_ID), { gstAmount: rupees(108), updatedBy: UID.sales }),
     );
   });
 
-  it('lets a priced job still be moved along by production', async () => {
-    const sales = testEnv.authenticatedContext(UID.sales).firestore();
-    await assertSucceeds(
-      updateDoc(doc(sales, 'jobs', JOB_ID), { pricing: pricingDoc(), updatedBy: UID.sales }),
-    );
+  it('keeps the job link and the creation audit immutable', async () => {
+    const db = testEnv.authenticatedContext(UID.sales).firestore();
 
-    const production = testEnv.authenticatedContext(UID.production).firestore();
-    await assertSucceeds(
-      updateDoc(doc(production, 'jobs', JOB_ID), { status: 'ready', updatedBy: UID.production }),
+    await assertFails(
+      updateDoc(doc(db, 'jobPricing', JOB_ID), { jobId: 'another-job', updatedBy: UID.sales }),
     );
+    await assertFails(
+      updateDoc(doc(db, 'jobPricing', JOB_ID), { createdBy: UID.sales, updatedBy: UID.sales }),
+    );
+  });
+
+  it('never allows pricing to be deleted', async () => {
+    for (const role of USER_ROLES) {
+      const db = testEnv.authenticatedContext(UID[role]).firestore();
+      await assertFails(deleteDoc(doc(db, 'jobPricing', JOB_ID)));
+    }
   });
 });

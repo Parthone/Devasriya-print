@@ -312,12 +312,14 @@ production stages (8), advanced assignment (9), billing (11).
   holds `jobs:edit`, cannot change a price; enforced in firestore.rules
 - Manage the rate card: `settings:manage`
 
-**Known limitation**
+**Where pricing is stored**
 
-Pricing lives on the job document, so anyone with `jobs:view` could read it
-through the API even though the UI hides it - Firestore has no field-level read
-rules. Writes are properly restricted. Moving pricing to its own collection is
-the fix if that ever matters.
+In its own collection, `jobPricing/{jobId}`, not on the job. Firestore has no
+field-level read rules, so money on the job document would have been readable by
+anyone holding `jobs:view` - designer and production included. As a separate
+document it is gated properly: reading needs `estimates:view` and writing needs
+`jobs:edit` and `estimates:create`. The job document holds no amounts at all,
+and the UI only requests pricing for a user who may read it.
 
 **Deliberately excluded**
 

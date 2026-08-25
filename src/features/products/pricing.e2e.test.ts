@@ -21,8 +21,9 @@ vi.stubEnv('VITE_USE_FIREBASE_EMULATORS', 'true');
 
 const { signInWithEmail, signOutCurrentUser } =
   await import('@/features/auth/services/auth.service');
-const { createJob, findJob, newJobId, updateJobPricing } =
-  await import('@/features/jobs/services/job.service');
+const { createJob, findJob, newJobId } = await import('@/features/jobs/services/job.service');
+const { findJobPricing, saveJobPricing } =
+  await import('@/features/jobs/services/job-pricing.service');
 const { EMPTY_PICKUP } = await import('@/features/locations/types');
 const { createProduct, listProducts, updateProduct } =
   await import('@/features/products/services/product.service');
@@ -37,6 +38,9 @@ const adminDb = getAdminFirestore(adminApp);
 const OWNER = { email: 'owner.m5@devasriya.test', password: 'Owner@12345', uid: '' };
 const SALES = { email: 'sales.m5@devasriya.test', password: 'Sales@12345', uid: '' };
 const PRODUCTION = { email: 'prod.m5@devasriya.test', password: 'Prod@123456', uid: '' };
+const DESIGNER = { email: 'design.m5@devasriya.test', password: 'Design@1234', uid: '' };
+const ACCOUNTS = { email: 'acct.m5@devasriya.test', password: 'Acct@123456', uid: '' };
+const VIEWER = { email: 'view.m5@devasriya.test', password: 'View@123456', uid: '' };
 
 const NOW = new Date('2026-08-24T10:00:00.000Z');
 const CUSTOMER = { id: 'customer-m5', name: 'Ravi Kumar', mobile: '9812300011' };
@@ -108,6 +112,9 @@ beforeAll(async () => {
   await seedStaff(OWNER, 'owner');
   await seedStaff(SALES, 'sales');
   await seedStaff(PRODUCTION, 'production');
+  await seedStaff(DESIGNER, 'designer');
+  await seedStaff(ACCOUNTS, 'accounts');
+  await seedStaff(VIEWER, 'viewer');
 });
 
 afterAll(async () => {
@@ -118,6 +125,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await signOutCurrentUser().catch(() => undefined);
   await clearCollection('jobs');
+  await clearCollection('jobPricing');
   await clearCollection('products');
   await clearCollection('counters');
 });
@@ -177,6 +185,27 @@ describe('the rate card against the emulators', () => {
   });
 });
 
+async function priceJobForTest(jobId: string, ratePerSqFt: number, actorUid: string) {
+  const line = calculateLine({
+    id: 'line-1',
+    productId: 'product-1',
+    productName: 'Flex Print 440 GSM',
+    pricingMethod: 'per-square-foot',
+    measurementUnit: 'foot',
+    width: 6,
+    height: 4,
+    quantity: 2,
+    rate: fromRupees(ratePerSqFt),
+  });
+  if (!line.ok) throw new Error('expected a priced line');
+
+  const summary = summarisePricing([line.line]);
+  if (!summary.ok) throw new Error('expected a summary');
+
+  await saveJobPricing(jobId, summary.pricing, actorFor({ uid: actorUid }, 'Actor'));
+  return summary.pricing;
+}
+
 describe('pricing a job against the emulators', () => {
   async function priceJob(jobId: string, ratePerSqFt: number, actorUid: string) {
     const line = calculateLine({
@@ -195,7 +224,7 @@ describe('pricing a job against the emulators', () => {
     const summary = summarisePricing([line.line]);
     if (!summary.ok) throw new Error('expected a summary');
 
-    await updateJobPricing(jobId, summary.pricing, actorFor({ uid: actorUid }, 'Actor'));
+    await saveJobPricing(jobId, summary.pricing, actorFor({ uid: actorUid }, 'Actor'));
     return summary.pricing;
   }
 
@@ -206,14 +235,20 @@ describe('pricing a job against the emulators', () => {
     const pricing = await priceJob(job.id, 25, SALES.uid);
     expect(toRupees(pricing.total)).toBe(1200);
 
-    const stored = await findJob(job.id);
-    expect(stored?.pricing?.lines).toHaveLength(1);
-    expect(stored?.pricing?.subtotal.paise).toBe(120_000);
-    expect(stored?.pricing?.total.paise).toBe(120_000);
-    expect(stored?.pricing?.lines[0]?.lineAmount.paise).toBe(120_000);
+    const stored = await findJobPricing(job.id);
+    expect(stored?.lines).toHaveLength(1);
+    expect(stored?.subtotal.paise).toBe(120_000);
+    expect(stored?.total.paise).toBe(120_000);
+    expect(stored?.lines[0]?.lineAmount.paise).toBe(120_000);
+    expect(stored?.jobId).toBe(job.id);
 
-    const raw = await adminDb.collection('jobs').doc(job.id).get();
-    expect(raw.data()?.pricing?.total).toEqual({ paise: 120_000, currency: 'INR' });
+    // Nothing about money is on the job document itself.
+    const rawJob = await adminDb.collection('jobs').doc(job.id).get();
+    expect(rawJob.data()).not.toHaveProperty('pricing');
+    expect(JSON.stringify(rawJob.data())).not.toContain('120000');
+
+    const rawPricing = await adminDb.collection('jobPricing').doc(job.id).get();
+    expect(rawPricing.data()?.total).toEqual({ paise: 120_000, currency: 'INR' });
   });
 
   it('keeps the measurement snapshot needed to reproduce the calculation', async () => {
@@ -221,8 +256,8 @@ describe('pricing a job against the emulators', () => {
     const job = await createTestJob();
     await priceJob(job.id, 25, SALES.uid);
 
-    const stored = await findJob(job.id);
-    const line = stored?.pricing?.lines[0];
+    const stored = await findJobPricing(job.id);
+    const line = stored?.lines[0];
     expect(line).toMatchObject({
       productId: 'product-1',
       productName: 'Flex Print 440 GSM',
@@ -270,9 +305,9 @@ describe('pricing a job against the emulators', () => {
       OWNER.uid,
     );
 
-    const stored = await findJob(job.id);
-    expect(stored?.pricing?.lines[0]?.rate.paise).toBe(2500);
-    expect(stored?.pricing?.total.paise).toBe(120_000);
+    const stored = await findJobPricing(job.id);
+    expect(stored?.lines[0]?.rate.paise).toBe(2500);
+    expect(stored?.total.paise).toBe(120_000);
   });
 
   it('stops production changing a price while still letting it move the job', async () => {
@@ -298,11 +333,15 @@ describe('pricing a job against the emulators', () => {
     if (!summary.ok) throw new Error('expected a summary');
 
     await expect(
-      updateJobPricing(job.id, summary.pricing, actorFor(PRODUCTION, 'Production')),
+      saveJobPricing(job.id, summary.pricing, actorFor(PRODUCTION, 'Production')),
     ).rejects.toMatchObject({ code: 'permission-denied' });
 
-    const stored = await findJob(job.id);
-    expect(stored?.pricing?.total.paise).toBe(120_000);
+    // Production cannot even read it back to check.
+    await expect(findJobPricing(job.id)).rejects.toMatchObject({ code: 'permission-denied' });
+
+    await signInWithEmail(SALES.email, SALES.password);
+    const stored = await findJobPricing(job.id);
+    expect(stored?.total.paise).toBe(120_000);
   });
 
   it('refuses a total below zero at the database, not just in the form', async () => {
@@ -329,7 +368,59 @@ describe('pricing a job against the emulators', () => {
     };
 
     await expect(
-      updateJobPricing(job.id, tampered, actorFor(SALES, 'Sales User')),
+      saveJobPricing(job.id, tampered, actorFor(SALES, 'Sales User')),
     ).rejects.toBeInstanceOf(AppError);
+  });
+});
+
+describe('pricing is not readable through the job', () => {
+  it('denies designer and production the pricing document while leaving the job readable', async () => {
+    await signInWithEmail(SALES.email, SALES.password);
+    const job = await createTestJob();
+
+    const line = calculateLine({
+      id: 'line-1',
+      productId: null,
+      productName: 'Flex',
+      pricingMethod: 'flat-rate',
+      measurementUnit: 'foot',
+      quantity: 1,
+      rate: fromRupees(2500),
+    });
+    if (!line.ok) throw new Error('expected a line');
+    const summary = summarisePricing([line.line]);
+    if (!summary.ok) throw new Error('expected a summary');
+    await saveJobPricing(job.id, summary.pricing, actorFor(SALES, 'Sales User'));
+
+    for (const account of [DESIGNER, PRODUCTION]) {
+      await signInWithEmail(account.email, account.password);
+
+      // The job itself is still perfectly readable.
+      const visibleJob = await findJob(job.id);
+      expect(visibleJob?.jobNumber).toBe(job.jobNumber);
+      expect(JSON.stringify(visibleJob)).not.toContain('250000');
+
+      // The money is not.
+      await expect(findJobPricing(job.id)).rejects.toMatchObject({
+        code: 'permission-denied',
+      });
+    }
+  });
+
+  it('lets accounts and viewer read pricing without being able to change it', async () => {
+    await signInWithEmail(SALES.email, SALES.password);
+    const job = await createTestJob();
+    const priced = await priceJobForTest(job.id, 25, SALES.uid);
+
+    for (const account of [ACCOUNTS, VIEWER]) {
+      await signInWithEmail(account.email, account.password);
+
+      const stored = await findJobPricing(job.id);
+      expect(stored?.total.paise).toBe(priced.total.paise);
+
+      await expect(
+        saveJobPricing(job.id, priced, actorFor(account, 'Reader')),
+      ).rejects.toMatchObject({ code: 'permission-denied' });
+    }
   });
 });

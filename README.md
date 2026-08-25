@@ -438,11 +438,18 @@ an end-to-end test that doubles a rate and checks the old job is untouched.
 - **Manage the rate card** (Settings, Products & rates): `settings:manage`,
   owner only. Items are deactivated, never deleted, because old jobs name them.
 
-Worth knowing: the rules stop the wrong people **writing** a price, and the UI
-hides pricing from designer and production. Because pricing is stored on the job
-document, a determined person with `jobs:view` could still read it through the
-API - Firestore has no field-level read rules. Moving pricing to its own
-collection would close that off if it ever matters.
+### Where pricing lives
+
+Pricing is **not** on the job document. It is a separate document at
+`jobPricing/{jobId}`, because Firestore has no field-level read rules: money
+kept on the job would be readable by anyone who may read jobs, which includes
+designer and production.
+
+Keeping it apart lets the rules gate the money itself - reading needs
+`estimates:view`, so designer and production are refused at the database, not
+just in the UI. The job detail page only asks for pricing when the signed-in
+user holds that permission, so no denied request is ever sent. Nothing about
+money remains on `jobs/{jobId}`.
 
 ## Project structure
 

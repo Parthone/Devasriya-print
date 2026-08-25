@@ -1,6 +1,7 @@
 import type { AuditEvent } from '@/features/audit/types';
 import type { Customer } from '@/features/customers/types';
 import type { Enquiry } from '@/features/enquiries/types';
+import type { JobPricingDocument } from '@/features/jobs/pricing-types';
 import type { Job } from '@/features/jobs/types';
 import type { Location } from '@/features/locations/types';
 import type { Product } from '@/features/products/types';
@@ -396,50 +397,6 @@ export const DEMO_JOBS: Job[] = [
     assignedToId: 'demo-designer',
     assignedToName: 'Imran Sheikh',
     status: 'in-progress',
-    pricing: {
-      lines: [
-        {
-          id: 'line-1',
-          productId: 'demo-product-1',
-          productName: 'Flex Print 440 GSM',
-          pricingMethod: 'per-square-foot',
-          width: 10,
-          height: 6,
-          measurementUnit: 'foot',
-          quantity: 2,
-          rate: rate(25),
-          rateUnit: 'sq-ft',
-          calculatedArea: 60,
-          lineAmount: rate(3000),
-        },
-        {
-          id: 'line-2',
-          productId: 'demo-product-3',
-          productName: 'Aluminium Frame',
-          pricingMethod: 'per-running-foot',
-          length: 32,
-          measurementUnit: 'foot',
-          quantity: 2,
-          rate: rate(20),
-          rateUnit: 'running-ft',
-          calculatedLength: 32,
-          lineAmount: rate(1280),
-        },
-        {
-          id: 'line-3',
-          productId: 'demo-product-5',
-          productName: 'Site Installation',
-          pricingMethod: 'flat-rate',
-          quantity: 1,
-          rate: rate(1500),
-          rateUnit: 'flat',
-          lineAmount: rate(1500),
-        },
-      ],
-      subtotal: rate(5780),
-      adjustment: { amount: rate(-280), reason: 'Repeat customer discount' },
-      total: rate(5500),
-    },
     createdAt: stamp(9),
     createdBy: DEMO_OWNER_UID,
     updatedAt: stamp(10),
@@ -558,6 +515,63 @@ export const DEMO_PRODUCTS: Product[] = [
     createdAt: DEMO_EPOCH,
     createdBy: DEMO_OWNER_UID,
     updatedAt: DEMO_EPOCH,
+    updatedBy: DEMO_OWNER_UID,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Module 5 demo data: job pricing, held apart from the job itself
+// ---------------------------------------------------------------------------
+
+export const DEMO_JOB_PRICING: JobPricingDocument[] = [
+  {
+    id: 'demo-job-1',
+    jobId: 'demo-job-1',
+    lines: [
+      {
+        id: 'line-1',
+        productId: 'demo-product-1',
+        productName: 'Flex Print 440 GSM',
+        pricingMethod: 'per-square-foot',
+        width: 10,
+        height: 6,
+        measurementUnit: 'foot',
+        quantity: 2,
+        rate: rate(25),
+        rateUnit: 'sq-ft',
+        calculatedArea: 60,
+        lineAmount: rate(3000),
+      },
+      {
+        id: 'line-2',
+        productId: 'demo-product-3',
+        productName: 'Aluminium Frame',
+        pricingMethod: 'per-running-foot',
+        length: 32,
+        measurementUnit: 'foot',
+        quantity: 2,
+        rate: rate(20),
+        rateUnit: 'running-ft',
+        calculatedLength: 32,
+        lineAmount: rate(1280),
+      },
+      {
+        id: 'line-3',
+        productId: 'demo-product-5',
+        productName: 'Site Installation',
+        pricingMethod: 'flat-rate',
+        quantity: 1,
+        rate: rate(1500),
+        rateUnit: 'flat',
+        lineAmount: rate(1500),
+      },
+    ],
+    subtotal: rate(5780),
+    adjustment: { amount: rate(-280), reason: 'Repeat customer discount' },
+    total: rate(5500),
+    createdAt: stamp(9),
+    createdBy: DEMO_OWNER_UID,
+    updatedAt: stamp(10),
     updatedBy: DEMO_OWNER_UID,
   },
 ];

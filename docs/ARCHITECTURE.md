@@ -82,6 +82,9 @@ server-side authority - that migration must stay a service-layer change.
   history and search. The id stays the authoritative relationship.
 - Files live at immutable paths under an attachment id, and no Storage download
   URL is ever persisted - resolve one at play time through the storage service.
+- Firestore rules are per document, never per field. Data that only some roles
+  may read lives in its own collection - `jobPricing/{jobId}` rather than a
+  field on the job - so the rule can actually enforce it.
 - Dates are displayed in `Asia/Kolkata` via `src/lib/format.ts`. Do not call
   `toLocaleDateString` directly in components.
 

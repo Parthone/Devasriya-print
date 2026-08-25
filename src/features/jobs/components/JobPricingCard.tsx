@@ -4,10 +4,10 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { AdjustmentDialog } from '@/features/jobs/components/AdjustmentDialog';
 import { PricingLineDialog } from '@/features/jobs/components/PricingLineDialog';
 import { PricingLineTable } from '@/features/jobs/components/PricingLineTable';
-import type { Job } from '@/features/jobs/types';
 import { formatMoney } from '@/lib/format';
 import {
   EMPTY_PRICING,
@@ -20,7 +20,9 @@ import {
 } from '@/lib/pricing';
 
 interface JobPricingCardProps {
-  job: Job;
+  /** Null when this job has not been priced yet. */
+  pricing: JobPricing | null;
+  isLoading: boolean;
   canEdit: boolean;
   isSaving: boolean;
   onSave: (pricing: JobPricing) => void;
@@ -40,8 +42,14 @@ function nextLineId(existing: PricingLine[]): string {
  * jobs and create estimates. Every save rewrites lines and totals together, so
  * they cannot drift apart.
  */
-export function JobPricingCard({ job, canEdit, isSaving, onSave }: JobPricingCardProps) {
-  const pricing = job.pricing ?? EMPTY_PRICING;
+export function JobPricingCard({
+  pricing: stored,
+  isLoading,
+  canEdit,
+  isSaving,
+  onSave,
+}: JobPricingCardProps) {
+  const pricing = stored ?? EMPTY_PRICING;
   const [isLineOpen, setLineOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<PricingLine | undefined>(undefined);
   const [isAdjustmentOpen, setAdjustmentOpen] = useState(false);
@@ -115,7 +123,12 @@ export function JobPricingCard({ job, canEdit, isSaving, onSave }: JobPricingCar
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {pricing.lines.length === 0 ? (
+        {isLoading ? (
+          <div className="space-y-2" aria-busy="true">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : pricing.lines.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
             <Calculator className="size-5" aria-hidden="true" />
             <p className="text-sm">

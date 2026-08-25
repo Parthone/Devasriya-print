@@ -14,6 +14,7 @@ export const COLLECTIONS = {
   locations: 'locations',
   counters: 'counters',
   products: 'products',
+  jobPricing: 'jobPricing',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

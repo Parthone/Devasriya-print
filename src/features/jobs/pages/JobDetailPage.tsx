@@ -13,7 +13,8 @@ import { AssignJobDialog } from '@/features/jobs/components/AssignJobDialog';
 import { JobFormDialog, type JobSubmitPayload } from '@/features/jobs/components/JobFormDialog';
 import { JobPricingCard } from '@/features/jobs/components/JobPricingCard';
 import { JobPriorityBadge, JobStatusBadge } from '@/features/jobs/components/JobStatusBadge';
-import { useUpdateJobPricing } from '@/features/jobs/hooks/use-job-pricing';
+import { useJobPricing, useUpdateJobPricing } from '@/features/jobs/hooks/use-job-pricing';
+import { toJobPricing } from '@/features/jobs/pricing-types';
 import { useAssignJob, useJob, useUpdateJob } from '@/features/jobs/hooks/use-jobs';
 import type { Job } from '@/features/jobs/types';
 import { Can } from '@/features/permissions/components/Can';
@@ -47,6 +48,10 @@ export function JobDetailPage() {
   const updateJob = useUpdateJob(actor);
   const assignJob = useAssignJob(actor);
   const updatePricing = useUpdateJobPricing(actor);
+  // Pricing is a separate document with its own read rule. It is only
+  // requested for somebody who may see estimates, so a designer or a
+  // production user never even asks for it.
+  const pricingQuery = useJobPricing(jobId, { enabled: canSeePricing });
 
   const [isEditOpen, setEditOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState<Job | null>(null);
@@ -218,7 +223,8 @@ export function JobDetailPage() {
 
       {canSeePricing ? (
         <JobPricingCard
-          job={job}
+          pricing={toJobPricing(pricingQuery.data ?? null)}
+          isLoading={pricingQuery.isPending}
           canEdit={canEditPricing}
           isSaving={updatePricing.isPending}
           onSave={(pricing) => {
