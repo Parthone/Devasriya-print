@@ -6,12 +6,14 @@ import {
   DEMO_JOBS,
   DEMO_LOCATIONS,
   DEMO_OWNER_UID,
+  DEMO_PRODUCTS,
 } from '@/features/demo/demo-data';
 import type { AuditEvent } from '@/features/audit/types';
 import type { Customer, CustomerInput } from '@/features/customers/types';
 import type { Enquiry } from '@/features/enquiries/types';
 import type { Job } from '@/features/jobs/types';
 import type { Location, LocationInput } from '@/features/locations/types';
+import type { Product, ProductInput } from '@/features/products/types';
 import type { UserProfile } from '@/types/auth';
 import type { Id } from '@/types/common';
 
@@ -48,6 +50,7 @@ export function resetDemoStore(): void {
   locations = [...DEMO_LOCATIONS];
   enquiries = [...DEMO_ENQUIRIES];
   jobs = [...DEMO_JOBS];
+  products = [...DEMO_PRODUCTS];
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
   auditEvents = [...DEMO_AUDIT_EVENTS];
@@ -229,4 +232,36 @@ export function nextDemoNumber(prefix: string, yearKey: string, existing: string
     .filter((value) => Number.isFinite(value));
   const next = (used.length > 0 ? Math.max(...used) : 0) + 1;
   return `${prefix}-${yearKey}-${String(next).padStart(4, '0')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Module 5: rate card
+// ---------------------------------------------------------------------------
+
+let products: Product[] = [...DEMO_PRODUCTS];
+
+export function demoProducts(): Product[] {
+  return [...products].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function addDemoProduct(input: ProductInput, actorId: Id): Product {
+  const now = new Date();
+  const product: Product = {
+    ...input,
+    id: nextId('demo-product-new'),
+    createdAt: now,
+    createdBy: actorId,
+    updatedAt: now,
+    updatedBy: actorId,
+  };
+  products = [...products, product];
+  return product;
+}
+
+export function updateDemoProduct(id: Id, changes: Partial<Product>, actorId: Id): void {
+  products = products.map((product) =>
+    product.id === id
+      ? { ...product, ...changes, updatedAt: new Date(), updatedBy: actorId }
+      : product,
+  );
 }

@@ -9,6 +9,7 @@ import { EnquiryDetailPage } from '@/features/enquiries/pages/EnquiryDetailPage'
 import { JobDetailPage } from '@/features/jobs/pages/JobDetailPage';
 import { JobsPage } from '@/features/jobs/pages/JobsPage';
 import { LocationsPage } from '@/features/locations/pages/LocationsPage';
+import { ProductsPage } from '@/features/products/pages/ProductsPage';
 import { CustomersPage } from '@/features/customers/pages/CustomersPage';
 import { RolesPage } from '@/features/permissions/pages/RolesPage';
 import { UsersPage } from '@/features/users/pages/UsersPage';
@@ -105,6 +106,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['jobs:view']}>
             <JobDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.products,
+        element: (
+          <ProtectedRoute requires={['settings:manage']}>
+            <ProductsPage />
           </ProtectedRoute>
         ),
       },

@@ -11,10 +11,13 @@ import { ROUTES } from '@/constants/routes';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
 import { AssignJobDialog } from '@/features/jobs/components/AssignJobDialog';
 import { JobFormDialog, type JobSubmitPayload } from '@/features/jobs/components/JobFormDialog';
+import { JobPricingCard } from '@/features/jobs/components/JobPricingCard';
 import { JobPriorityBadge, JobStatusBadge } from '@/features/jobs/components/JobStatusBadge';
+import { useUpdateJobPricing } from '@/features/jobs/hooks/use-job-pricing';
 import { useAssignJob, useJob, useUpdateJob } from '@/features/jobs/hooks/use-jobs';
 import type { Job } from '@/features/jobs/types';
 import { Can } from '@/features/permissions/components/Can';
+import { usePermissions } from '@/features/permissions/hooks/use-permissions';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { formatMobile } from '@/lib/phone';
 import { AppError } from '@/types/common';
@@ -33,9 +36,17 @@ export function JobDetailPage() {
   const currentUser = useAuthenticatedUser();
   const actor = { uid: currentUser.uid, name: currentUser.name };
 
+  const { can } = usePermissions();
+  // Money is estimate work: visible to whoever may see estimates, and editable
+  // only by somebody who may change the job and create estimates. That keeps
+  // production, which holds jobs:edit, out of the pricing.
+  const canSeePricing = can('estimates:view');
+  const canEditPricing = can('jobs:edit') && can('estimates:create');
+
   const jobQuery = useJob(jobId);
   const updateJob = useUpdateJob(actor);
   const assignJob = useAssignJob(actor);
+  const updatePricing = useUpdateJobPricing(actor);
 
   const [isEditOpen, setEditOpen] = useState(false);
   const [assignTarget, setAssignTarget] = useState<Job | null>(null);
@@ -204,6 +215,17 @@ export function JobDetailPage() {
           </Card>
         ) : null}
       </div>
+
+      {canSeePricing ? (
+        <JobPricingCard
+          job={job}
+          canEdit={canEditPricing}
+          isSaving={updatePricing.isPending}
+          onSave={(pricing) => {
+            updatePricing.mutate({ jobId: job.id, pricing });
+          }}
+        />
+      ) : null}
 
       <JobFormDialog
         open={isEditOpen}

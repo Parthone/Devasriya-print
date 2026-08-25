@@ -11,6 +11,7 @@ rules_version = '2';
 //   auditLogs  (Module 2 - Roles & Permissions)
 //   customers  (Module 3 - Customer Management)
 //   enquiries, jobs, locations, counters  (Module 4 - Enquiries & Jobs)
+//   products  (Module 5 - Measurements & Pricing)
 //
 // Authorisation mirrors the application permission matrix in
 // src/features/permissions/matrix.ts. Hidden UI is never the control: every
@@ -48,19 +49,22 @@ service cloud.firestore {
                   'settings:view', 'settings:manage',
                   'customers:view', 'customers:create', 'customers:edit',
                   'enquiries:view', 'enquiries:create', 'enquiries:edit',
-                  'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign'],
+                  'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign',
+                  'estimates:view', 'estimates:create', 'estimates:edit'],
         'admin': ['employees:view', 'employees:manage', 'settings:view',
                   'customers:view', 'customers:create', 'customers:edit',
                   'enquiries:view', 'enquiries:create', 'enquiries:edit',
-                  'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign'],
+                  'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign',
+                  'estimates:view', 'estimates:create', 'estimates:edit'],
         'sales': ['customers:view', 'customers:create', 'customers:edit',
                   'enquiries:view', 'enquiries:create', 'enquiries:edit',
-                  'jobs:view', 'jobs:create', 'jobs:edit'],
+                  'jobs:view', 'jobs:create', 'jobs:edit',
+                  'estimates:view', 'estimates:create', 'estimates:edit'],
         'designer': ['customers:view', 'enquiries:view', 'jobs:view'],
         'production': ['employees:view', 'customers:view',
                        'enquiries:view', 'jobs:view', 'jobs:edit'],
-        'accounts': ['customers:view', 'jobs:view'],
-        'viewer': ['customers:view', 'enquiries:view', 'jobs:view']
+        'accounts': ['customers:view', 'jobs:view', 'estimates:view'],
+        'viewer': ['customers:view', 'enquiries:view', 'jobs:view', 'estimates:view']
       };
     }
 
@@ -90,6 +94,34 @@ service cloud.firestore {
              && data.isActive is bool
              && data.createdBy is string
              && data.updatedBy is string;
+    }
+
+    // Pricing lives on the job. Rules cannot walk every line of an array, so
+    // they check the shape and the totals that matter: the summary is money in
+    // whole paise, the total is never negative, an adjustment always carries a
+    // reason, and the number of lines is capped. Line by line validation is
+    // done by the zod schema at the data-access boundary.
+    function isValidMoney(value) {
+      return value is map
+             && value.keys().hasOnly(['paise', 'currency'])
+             && value.paise is int
+             && value.currency == 'INR';
+    }
+
+    function isValidPricing(data) {
+      let pricing = data.get('pricing', null);
+      return pricing == null
+             || (pricing.keys().hasOnly(['lines', 'subtotal', 'adjustment', 'total'])
+                 && pricing.lines is list
+                 && pricing.lines.size() <= 50
+                 && isValidMoney(pricing.subtotal)
+                 && isValidMoney(pricing.total)
+                 && pricing.total.paise >= 0
+                 && (pricing.adjustment == null
+                     || (pricing.adjustment.keys().hasOnly(['amount', 'reason'])
+                         && isValidMoney(pricing.adjustment.amount)
+                         && pricing.adjustment.reason is string
+                         && pricing.adjustment.reason.size() > 0)));
     }
 
     match /users/{userId} {
@@ -347,8 +379,8 @@ service cloud.firestore {
                                        'pickupLocationId', 'pickupLocationName',
                                        'contactPersonId', 'contactPersonName',
                                        'contactPersonMobile', 'assignedToId', 'assignedToName',
-                                       'status', 'createdAt', 'createdBy', 'updatedAt',
-                                       'updatedBy'])
+                                       'status', 'pricing', 'createdAt', 'createdBy',
+                                       'updatedAt', 'updatedBy'])
                && data.jobNumber.matches('^JOB-[0-9]{4}-[0-9]{4}$')
                && isPresentString(data.customerId)
                && isPresentString(data.title) && data.title.size() <= 160
@@ -378,9 +410,52 @@ service cloud.firestore {
                     && request.resource.data.createdBy == resource.data.createdBy
                     && request.resource.data.enquiryId == resource.data.enquiryId
                     && request.resource.data.updatedBy == request.auth.uid
+                    // Changing who is responsible is a separate permission.
                     && (request.resource.data.assignedToId == resource.data.assignedToId
-                        || can('jobs:assign'));
+                        || can('jobs:assign'))
+                    // Money is estimate work. jobs:edit alone - which production
+                    // holds - must never be enough to change a price.
+                    && (request.resource.data.get('pricing', null)
+                          == resource.data.get('pricing', null)
+                        || (can('estimates:create') && isValidPricing(request.resource.data)));
 
+      allow delete: if false;
+    }
+
+    // The rate card. Anyone active may read it, because anyone pricing a job
+    // needs it; only the owner may change it, and nothing is ever deleted.
+    match /products/{productId} {
+      function isValidProduct(data) {
+        return data.keys().hasAll(['name', 'category', 'pricingMethod', 'defaultRate',
+                                   'defaultRateUnit', 'isActive',
+                                   'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.keys().hasOnly(['name', 'category', 'pricingMethod', 'defaultRate',
+                                       'defaultRateUnit', 'description', 'isActive',
+                                       'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
+               && data.category in ['printing', 'material', 'finishing', 'service', 'other']
+               && data.pricingMethod in ['per-square-foot', 'per-square-meter',
+                                         'per-running-foot', 'per-running-meter',
+                                         'per-piece', 'flat-rate']
+               && data.defaultRateUnit in ['sq-ft', 'sq-m', 'running-ft', 'running-m',
+                                           'piece', 'flat']
+               && isValidMoney(data.defaultRate)
+               && data.defaultRate.paise >= 0
+               && data.isActive is bool
+               && data.updatedBy is string;
+      }
+
+      allow get, list: if isActiveUser();
+      allow create: if can('settings:manage')
+                    && isValidProduct(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if can('settings:manage')
+                    && resource != null
+                    && isValidProduct(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid;
       allow delete: if false;
     }
 

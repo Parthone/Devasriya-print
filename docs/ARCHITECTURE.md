@@ -69,6 +69,9 @@ server-side authority - that migration must stay a service-layer change.
   malformed documents fail at the boundary rather than in the UI.
 - Money is an integer number of paise (`src/lib/money.ts`). Never store or add
   floating point rupees. Display with `formatMoney` from `src/lib/format.ts`.
+- Measurements normalise to exact integer micrometres (`src/lib/measurement.ts`),
+  and money calculations run in BigInt and round once, half away from zero
+  (`src/lib/pricing.ts`). A stored total is always the exact sum of its parts.
 - Phone numbers are ten digits without the country code
   (`src/lib/phone.ts`); normalise on the way in, format on the way out.
 - A record that other modules will link to (customers, enquiries, jobs) is

@@ -13,6 +13,7 @@ export const COLLECTIONS = {
   jobs: 'jobs',
   locations: 'locations',
   counters: 'counters',
+  products: 'products',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Building2,
+  Calculator,
   ShieldCheck,
   Boxes,
   CalendarClock,
@@ -40,6 +41,7 @@ export const ROUTES = {
   settings: '/settings',
   users: '/settings/users',
   locations: '/settings/locations',
+  products: '/settings/products',
   roles: '/settings/roles',
   forbidden: '/forbidden',
 } as const;
@@ -180,6 +182,13 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Pickup Offices',
         path: ROUTES.locations,
         icon: Building2,
+        enabled: true,
+        permission: 'settings:manage',
+      },
+      {
+        label: 'Products & Rates',
+        path: ROUTES.products,
+        icon: Calculator,
         enabled: true,
         permission: 'settings:manage',
       },

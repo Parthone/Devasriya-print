@@ -288,3 +288,49 @@ describe('demo dashboard', () => {
     expect(document.body.textContent).not.toMatch(/emulator/i);
   });
 });
+
+describe('demo pricing', () => {
+  it('shows the priced items, the working and the total on a demo job', async () => {
+    renderDemoApp('/jobs/demo-job-1');
+
+    expect(await screen.findByText('Measurements & pricing')).toBeInTheDocument();
+    expect(screen.getAllByText('Flex Print 440 GSM').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/10 x 6 foot x 2/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Repeat customer discount').length).toBeGreaterThan(0);
+    // Subtotal 5,780 less 280 leaves 5,500.
+    expect(screen.getAllByText(/5,500\.00/).length).toBeGreaterThan(0);
+    expectNoFirebaseCalls();
+  });
+
+  it('adds a priced item in memory', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderDemoApp('/jobs/demo-job-2');
+
+    await screen.findByText('Measurements & pricing');
+    await user.click(screen.getByRole('button', { name: /add item/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('combobox', { name: /rate card item/i }));
+    await user.click(await screen.findByRole('option', { name: 'Flex Print 440 GSM' }));
+    await user.type(within(dialog).getByLabelText(/^width/i), '4');
+    await user.type(within(dialog).getByLabelText(/^height/i), '3');
+    await user.click(within(dialog).getByRole('button', { name: 'Add item' }));
+
+    // 12 sq ft at Rs 25 is Rs 300.
+    await waitFor(() => {
+      expect(screen.getAllByText(/300\.00/).length).toBeGreaterThan(0);
+    });
+    expectNoFirebaseCalls();
+  });
+
+  it('lists the demo rate card for the owner', async () => {
+    renderDemoApp(ROUTES.products);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Products & rates', level: 1 }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Aluminium Frame')).toBeInTheDocument();
+    expect(screen.getByText('Sunboard (discontinued)')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+});

@@ -8,10 +8,10 @@ Built as a real commercial application - React + TypeScript on the front end,
 Firebase (Authentication, Cloud Firestore, Cloud Storage, Hosting) on the back
 end, with an architecture that can move to Google Cloud services later.
 
-> **Status: Modules 0-4 complete** - foundation, authentication and employee
+> **Status: Modules 0-5 complete** - foundation, authentication and employee
 > accounts, role-based permissions with an audit trail, customer management,
-> and enquiries with conversion to jobs. See [docs/MODULES.md](docs/MODULES.md)
-> for the roadmap.
+> enquiries with conversion to jobs, and measurements with price calculation.
+> See [docs/MODULES.md](docs/MODULES.md) for the roadmap.
 
 ---
 
@@ -390,6 +390,60 @@ it is ever needed; the employee audit trail from Module 2 is unaffected.
 With no data at all, the dashboard shows a short "Get started" panel instead of
 a wall of zeros - with an action only for someone who may add a customer.
 
+## Measurements and pricing
+
+A job can hold up to 50 priced items. Each one records what was measured, how it
+was priced and what it came to, and the job carries the subtotal, an optional
+adjustment and the total.
+
+### Money is never a floating point number
+
+Amounts are whole paise (`src/lib/money.ts`). Rates, line amounts and totals are
+integers all the way through, so `Rs 99.999999` cannot happen.
+
+The calculation itself (`src/lib/pricing.ts`) multiplies in `BigInt` over exact
+integers and rounds **once per line, half away from zero**, to whole paise. The
+subtotal is the exact integer sum of the stored line amounts and the total is
+subtotal plus the signed adjustment, so the figure at the bottom always equals
+the lines above it. The total is never allowed below zero, in the form and in
+the security rules.
+
+### Measurements are exact
+
+Every unit converts to whole micrometres by an exact integer factor - one inch
+is exactly 25400 um - so six feet is exactly 1828800 um with no drift, and
+imperial and metric mix freely (`src/lib/measurement.ts`). Supported units: mm,
+cm, inch, foot and metre.
+
+Pricing methods: per square foot, per square metre, per running foot, per
+running metre, per piece and flat rate. Each method asks only for the fields it
+needs - a per-piece line has no width, and a flat line has no quantity.
+
+### Rates are snapshots
+
+Choosing an item from the rate card fills in its default rate, and the rate
+stays editable for that job. What gets stored on the line is the rate **actually
+used**, together with the entered dimensions, the unit, the quantity and the
+calculated area or length. Nothing is ever read back from the rate card, so
+changing a price tomorrow cannot move a job that was priced yesterday - there is
+an end-to-end test that doubles a rate and checks the old job is untouched.
+
+### Who can do what
+
+- **See pricing:** `estimates:view` - owner, admin, sales, accounts, viewer.
+  Designer and production see the job but not the money.
+- **Change pricing:** `jobs:edit` **and** `estimates:create` - owner, admin and
+  sales. Production holds `jobs:edit` so it can move a job along, and the
+  security rules specifically stop that being enough to change a price.
+- **Manage the rate card** (Settings, Products & rates): `settings:manage`,
+  owner only. Items are deactivated, never deleted, because old jobs name them.
+
+Worth knowing: the rules stop the wrong people **writing** a price, and the UI
+hides pricing from designer and production. Because pricing is stored on the job
+document, a determined person with `jobs:view` could still read it through the
+API - Firestore has no field-level read rules. Moving pricing to its own
+collection would close that off if it ever matters.
+
 ## Project structure
 
 ```
@@ -408,6 +462,7 @@ src/
     enquiries/  Enquiry intake, follow-ups, voice requirements (Module 4)
     jobs/       Jobs, conversion from enquiries, assignment (Module 4)
     locations/  Pickup offices and their contact people (Module 4)
+    products/   Rate card and the Products & rates screen (Module 5)
     demo/       Temporary demo-mode session and sample data
     permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)

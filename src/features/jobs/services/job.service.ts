@@ -19,6 +19,7 @@ import { toAppError } from '@/lib/firebase/errors';
 import { COLLECTIONS } from '@/services/base/collections';
 import { allocateNumberInTransaction } from '@/services/base/counters';
 import { FirestoreRepository, orderBy } from '@/services/base/repository';
+import type { JobPricing } from '@/lib/pricing';
 import type { AudioAttachment } from '@/types/attachments';
 import { type Id } from '@/types/common';
 
@@ -174,6 +175,34 @@ export async function updateJob({
   try {
     await updateDoc(doc(getDb(), COLLECTIONS.jobs, previous.id), {
       ...changes,
+      updatedAt: serverTimestamp(),
+      updatedBy: actor.uid,
+    });
+  } catch (error) {
+    throw toAppError(error);
+  }
+}
+
+/**
+ * Saves the measurements and money for a job.
+ *
+ * Lines and totals are written together, so the total on a job can never
+ * disagree with the lines it is made of. Editing this needs both jobs:edit and
+ * estimates:create, which the security rules enforce as well.
+ */
+export async function updateJobPricing(
+  jobId: Id,
+  pricing: JobPricing,
+  actor: ActorSnapshot,
+): Promise<void> {
+  if (isDemoMode()) {
+    updateDemoJob(jobId, { pricing, updatedBy: actor.uid });
+    return;
+  }
+
+  try {
+    await updateDoc(doc(getDb(), COLLECTIONS.jobs, jobId), {
+      pricing,
       updatedAt: serverTimestamp(),
       updatedBy: actor.uid,
     });

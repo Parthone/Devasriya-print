@@ -275,6 +275,55 @@ rules forbid ordinary edits from changing it.
 Measurements and pricing (Module 5), quotations (6), design approval (7),
 production stages (8), advanced assignment (9), billing (11).
 
-## Next: Module 5 - Measurements & Price Calculation
+## Module 5 - Measurements & Pricing (delivered)
+
+**The calculation engine** (`src/lib/measurement.ts`, `src/lib/pricing.ts`)
+
+- Units normalise to exact integer micrometres (one inch is exactly 25400 um),
+  so mm, cm, inch, foot and metre mix without drift
+- Six pricing methods: per square foot, per square metre, per running foot, per
+  running metre, per piece, flat rate - each asking only for the fields it needs
+- Arithmetic in BigInt over exact integers, rounded once per line, half away from
+  zero, to whole paise
+- Subtotal is the exact integer sum of stored line amounts; total is subtotal
+  plus the signed adjustment and can never be negative
+- Pure and standalone, so Modules 6, 11 and 13 can reuse or snapshot it
+
+**Job pricing**
+
+- Up to 50 lines stored on the job document, written atomically with the totals
+- Every line keeps its own snapshot: entered dimensions, unit, quantity, method,
+  product id and name, the rate actually used, the calculated area or length and
+  the amount
+- One signed adjustment with a mandatory reason
+- The card shows the working: `6 x 4 foot x 2 @ Rs 25.00/sq ft = Rs 1,200.00`
+
+**Rate card** (`/settings/products`, `settings:manage`)
+
+- Products with a category, pricing method, default rate and active flag
+- Selecting one prefills the rate; the rate stays editable per job
+- Deactivated, never deleted
+- Changing a rate never re-prices existing jobs - proven end to end
+
+**Permissions** (no new permissions invented)
+
+- See pricing: `estimates:view` - so designer and production do not see money
+- Change pricing: `jobs:edit` **and** `estimates:create` - so production, which
+  holds `jobs:edit`, cannot change a price; enforced in firestore.rules
+- Manage the rate card: `settings:manage`
+
+**Known limitation**
+
+Pricing lives on the job document, so anyone with `jobs:view` could read it
+through the API even though the UI hides it - Firestore has no field-level read
+rules. Writes are properly restricted. Moving pricing to its own collection is
+the fix if that ever matters.
+
+**Deliberately excluded**
+
+GST and tax (Modules 6 and 11), quotation documents (6), inventory (12). No
+placeholder tax fields were added.
+
+## Next: Module 6 - Estimates & Quotations
 
 Scope to be confirmed before implementation.
