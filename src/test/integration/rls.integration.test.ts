@@ -6,6 +6,7 @@ import {
   SKIP_MESSAGE,
   adminClient,
   anonClient,
+  assertNoError,
   seedCustomerAccount,
   seedStaff,
   signedInAs,
@@ -41,7 +42,7 @@ const ROLES = ['owner', 'admin', 'sales', 'designer', 'production', 'accounts', 
 type Role = (typeof ROLES)[number];
 
 async function seedCustomer(id: string, name: string, mobile: string) {
-  await admin.from('customers').upsert({
+  const result = await admin.from('customers').upsert({
     id,
     name,
     type: 'business',
@@ -54,10 +55,11 @@ async function seedCustomer(id: string, name: string, mobile: string) {
     created_by: staff.owner!.uid,
     updated_by: staff.owner!.uid,
   });
+  assertNoError(result, `seed customer ${name}`);
 }
 
 async function seedJob(id: string, customerId: string, customerName: string, number: string) {
-  await admin.from('jobs').upsert({
+  const result = await admin.from('jobs').upsert({
     id,
     job_number: number,
     customer_id: customerId,
@@ -70,6 +72,7 @@ async function seedJob(id: string, customerId: string, customerName: string, num
     created_by: staff.owner!.uid,
     updated_by: staff.owner!.uid,
   });
+  assertNoError(result, `seed job ${number}`);
 }
 
 beforeAll(async () => {
@@ -146,28 +149,34 @@ describeIf('the permission matrix is enforced by the database', () => {
 
 describeIf('pricing is hidden from designer and production', () => {
   beforeAll(async () => {
-    await admin.from('job_pricing').upsert({
-      job_id: JOB_MINE,
-      subtotal_paise: 120_000,
-      total_paise: 120_000,
-      created_by: staff.owner!.uid,
-      updated_by: staff.owner!.uid,
-    });
-    await admin.from('job_pricing_lines').upsert({
-      id: '55555555-5555-4555-8555-555555555555',
-      job_id: JOB_MINE,
-      position: 0,
-      product_name: 'Flex Print 440 GSM',
-      pricing_method: 'per-square-foot',
-      measurement_unit: 'foot',
-      width: 6,
-      height: 4,
-      quantity: 2,
-      rate_paise: 2500,
-      rate_unit: 'sq-ft',
-      calculated_area: 24,
-      line_amount_paise: 120_000,
-    });
+    assertNoError(
+      await admin.from('job_pricing').upsert({
+        job_id: JOB_MINE,
+        subtotal_paise: 120_000,
+        total_paise: 120_000,
+        created_by: staff.owner!.uid,
+        updated_by: staff.owner!.uid,
+      }),
+      'seed job_pricing',
+    );
+    assertNoError(
+      await admin.from('job_pricing_lines').upsert({
+        id: '55555555-5555-4555-8555-555555555555',
+        job_id: JOB_MINE,
+        position: 0,
+        product_name: 'Flex Print 440 GSM',
+        pricing_method: 'per-square-foot',
+        measurement_unit: 'foot',
+        width: 6,
+        height: 4,
+        quantity: 2,
+        rate_paise: 2500,
+        rate_unit: 'sq-ft',
+        calculated_area: 24,
+        line_amount_paise: 120_000,
+      }),
+      'seed job_pricing_lines',
+    );
   });
 
   it.each(['owner', 'admin', 'sales', 'accounts', 'viewer'] as Role[])(
@@ -218,19 +227,89 @@ describeIf('pricing is hidden from designer and production', () => {
 describeIf('one customer never reaches another customer', () => {
   const DESIGN_MINE = '66666666-6666-4666-8666-666666666666';
   const DESIGN_THEIRS = '77777777-7777-4777-8777-777777777777';
+  const createdDesigns: string[] = [];
+  const createdJobs: string[] = [];
 
   beforeAll(async () => {
+    assertNoError(
+      await admin.from('designs').delete().in('id', [DESIGN_MINE, DESIGN_THEIRS]),
+      'clear design fixtures',
+    );
+
     for (const [id, jobId, customerId, name, number] of [
       [DESIGN_MINE, JOB_MINE, CUSTOMER_MINE, 'Shreeji Traders', 'JOB-9999-0001'],
       [DESIGN_THEIRS, JOB_THEIRS, CUSTOMER_THEIRS, 'Gupta Sweets', 'JOB-9999-0002'],
     ] as const) {
-      await admin.from('designs').upsert({
+      assertNoError(
+        await admin.from('designs').insert({
+          id,
+          job_id: jobId,
+          job_number: number,
+          job_title: 'Shop board',
+          customer_id: customerId,
+          customer_name: name,
+          version: 1,
+          file_id: id,
+          file_path: `${jobId}/${id}.png`,
+          file_mime: 'image/png',
+          file_size_bytes: 204_800,
+          file_original_name: 'board.png',
+          file_uploaded_at: new Date().toISOString(),
+          file_uploaded_by: staff.designer!.uid,
+          preview_kind: 'image',
+          uploaded_by_id: staff.designer!.uid,
+          uploaded_by_name: 'designer user',
+          status: 'submitted-for-review',
+          submitted_at: new Date().toISOString(),
+          created_by: staff.designer!.uid,
+          updated_by: staff.designer!.uid,
+        }),
+        `seed design ${id}`,
+      );
+    }
+  });
+
+  /**
+   * A job and a version of its own, for a test that is going to answer one.
+   *
+   * Answering is a one-way move by design: the transition table has no path back
+   * from approved to submitted-for-review, and an admin UPDATE cannot talk its
+   * way past that either. On top of that, `designs_one_approved_per_job` allows
+   * exactly one approved version per job - so two tests that both approve
+   * something need two jobs, not just two designs. Both constraints are the
+   * point of the system; the fixtures bend around them.
+   */
+  async function freshDesign(customerId: string, customerName: string) {
+    const jobId = crypto.randomUUID();
+    createdJobs.push(jobId);
+    const digits = () => String(Math.floor(Math.random() * 10_000)).padStart(4, '0');
+
+    assertNoError(
+      await admin.from('jobs').insert({
+        id: jobId,
+        job_number: `JOB-${digits()}-${digits()}`,
+        customer_id: customerId,
+        customer_name: customerName,
+        customer_mobile: '9812300011',
+        job_date: new Date().toISOString(),
+        title: 'Fixture job',
+        requirement_text: 'Fixture',
+        status: 'open',
+        created_by: staff.owner!.uid,
+        updated_by: staff.owner!.uid,
+      }),
+      'seed a fresh job',
+    );
+
+    const id = crypto.randomUUID();
+    assertNoError(
+      await admin.from('designs').insert({
         id,
         job_id: jobId,
-        job_number: number,
-        job_title: 'Shop board',
+        job_number: 'JOB-9999-0000',
+        job_title: 'Fixture job',
         customer_id: customerId,
-        customer_name: name,
+        customer_name: customerName,
         version: 1,
         file_id: id,
         file_path: `${jobId}/${id}.png`,
@@ -246,15 +325,35 @@ describeIf('one customer never reaches another customer', () => {
         submitted_at: new Date().toISOString(),
         created_by: staff.designer!.uid,
         updated_by: staff.designer!.uid,
-      });
-    }
+      }),
+      'seed a fresh design version',
+    );
+    createdDesigns.push(id);
+    return id;
+  }
+
+  afterAll(async () => {
+    if (!HAS_BACKEND) return;
+    // These are throwaway fixtures, not history: remove them so the project
+    // does not slowly fill with them. Only the service role can, which is the
+    // whole point - no client role has DELETE on designs.
+    await admin.from('designs').delete().in('id', createdDesigns);
+    await admin.from('jobs').delete().in('id', createdJobs);
   });
 
   it('serves a customer only their own designs, whatever they ask for', async () => {
-    const own = await mine.client.from('designs').select('id');
-    expect(own.data?.map((row) => row.id)).toEqual([DESIGN_MINE]);
+    const own = await mine.client.from('designs').select('id, customer_id');
+    assertNoError(own, 'customer reads designs');
 
-    // Asking for everything returns only their own row: the database filters
+    // Every row that comes back is theirs, their own design is among them, and
+    // the other customer's is not. Asserting the count instead would only be
+    // measuring how much fixture data happens to be in the project.
+    expect(own.data ?? []).not.toHaveLength(0);
+    expect(own.data?.every((row) => row.customer_id === CUSTOMER_MINE)).toBe(true);
+    expect(own.data?.map((row) => row.id)).toContain(DESIGN_MINE);
+    expect(own.data?.map((row) => row.id)).not.toContain(DESIGN_THEIRS);
+
+    // Asking for everything returns only their own rows: the database filters
     // it, the browser does not.
     const wider = await mine.client.from('designs').select('id').eq('customer_id', CUSTOMER_THEIRS);
     expect(wider.data ?? []).toHaveLength(0);
@@ -264,8 +363,12 @@ describeIf('one customer never reaches another customer', () => {
   });
 
   it('serves a customer only their own orders', async () => {
-    const own = await mine.client.from('jobs').select('id');
-    expect(own.data?.map((row) => row.id)).toEqual([JOB_MINE]);
+    const own = await mine.client.from('jobs').select('id, customer_id');
+    assertNoError(own, 'customer reads jobs');
+
+    expect(own.data ?? []).not.toHaveLength(0);
+    expect(own.data?.every((row) => row.customer_id === CUSTOMER_MINE)).toBe(true);
+    expect(own.data?.map((row) => row.id)).toContain(JOB_MINE);
 
     const other = await mine.client.from('jobs').select('id').eq('id', JOB_THEIRS);
     expect(other.data ?? []).toHaveLength(0);
@@ -313,6 +416,7 @@ describeIf('one customer never reaches another customer', () => {
       .select();
     expect(theirsAttempt.data ?? []).toHaveLength(0);
 
+    const target = await freshDesign(CUSTOMER_MINE, 'Shreeji Traders');
     const own = await mine.client
       .from('designs')
       .update({
@@ -326,23 +430,11 @@ describeIf('one customer never reaches another customer', () => {
         decision_language: 'hi',
         updated_by: mine.uid,
       })
-      .eq('id', DESIGN_MINE)
+      .eq('id', target)
       .select();
+    assertNoError(own, 'customer answers their own design');
     expect(own.data ?? []).toHaveLength(1);
     expect(own.data?.[0]?.decision_comment).toBe('Approved, but make the font size bigger.');
-
-    await admin
-      .from('designs')
-      .update({
-        status: 'submitted-for-review',
-        decision_outcome: null,
-        decision_comment: null,
-        decision_at: null,
-        decision_source: null,
-        decision_by_id: null,
-        decision_by_name: null,
-      })
-      .eq('id', DESIGN_MINE);
   });
 
   it('stops a customer touching the artwork while answering', async () => {
@@ -368,6 +460,8 @@ describeIf('one customer never reaches another customer', () => {
   });
 
   it('stops staff filing an answer as though the customer had typed it', async () => {
+    const target = await freshDesign(CUSTOMER_MINE, 'Shreeji Traders');
+
     const forged = await staff
       .sales!.client.from('designs')
       .update({
@@ -380,10 +474,11 @@ describeIf('one customer never reaches another customer', () => {
         decision_by_name: 'sales user',
         updated_by: staff.sales!.uid,
       })
-      .eq('id', DESIGN_MINE)
+      .eq('id', target)
       .select();
     expect(forged.data ?? []).toHaveLength(0);
 
+    // The same person, the same design, the honest attribution: allowed.
     const honest = await staff
       .sales!.client.from('designs')
       .update({
@@ -396,8 +491,9 @@ describeIf('one customer never reaches another customer', () => {
         decision_by_name: 'sales user',
         updated_by: staff.sales!.uid,
       })
-      .eq('id', DESIGN_MINE)
+      .eq('id', target)
       .select();
+    assertNoError(honest, 'staff records the answer honestly');
     expect(honest.data ?? []).toHaveLength(1);
   });
 });
@@ -405,7 +501,7 @@ describeIf('one customer never reaches another customer', () => {
 describeIf('owner-only powers stay with the owner', () => {
   it('lets only the owner change the rate card', async () => {
     const product = {
-      id: '88888888-8888-4888-8888-888888888888',
+      id: crypto.randomUUID(),
       name: 'Flex Print 440 GSM',
       category: 'printing',
       pricing_method: 'per-square-foot',
@@ -416,8 +512,9 @@ describeIf('owner-only powers stay with the owner', () => {
 
     const owner = await staff
       .owner!.client.from('products')
-      .upsert({ ...product, created_by: staff.owner!.uid, updated_by: staff.owner!.uid })
+      .insert({ ...product, created_by: staff.owner!.uid, updated_by: staff.owner!.uid })
       .select();
+    assertNoError(owner, 'owner adds a rate card item');
     expect(owner.data ?? []).toHaveLength(1);
 
     for (const role of [

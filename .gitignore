@@ -43,6 +43,8 @@ coverage/
 .eslintcache
 
 # Secrets. The service role key bypasses every security policy in the database
-# and must never reach the repository.
+# and the direct database URL is a superuser connection string. Neither must
+# ever reach the repository.
+.env.integration
 *service-account*.json
 supabase-service-role*

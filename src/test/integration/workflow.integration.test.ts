@@ -5,6 +5,8 @@ import {
   HAS_BACKEND,
   SKIP_MESSAGE,
   adminClient,
+  assertNoError,
+  assertOk,
   seedCustomerAccount,
   seedStaff,
   signedInAs,
@@ -27,7 +29,7 @@ let sales: TestAccount;
 let designer: TestAccount;
 let portal: TestAccount;
 
-const CUSTOMER = '11111111-1111-4111-8111-111111111111';
+const CUSTOMER = 'aaaaaaaa-0000-4000-8000-00000000000a';
 const FY = '2627';
 
 async function makeJob(title = 'Shop board') {
@@ -45,12 +47,11 @@ async function makeJob(title = 'Shop board') {
       p_year_key: FY,
     })
     .single<{ id: string; job_number: string }>();
-  if (error) throw error;
-  return data;
+  return assertOk({ data, error }, 'create_job');
 }
 
 async function priceJob(jobId: string, ratePaise: number, amountPaise: number) {
-  const { error } = await owner.client.rpc('save_job_pricing', {
+  const result = await owner.client.rpc('save_job_pricing', {
     p_job_id: jobId,
     p_pricing: {
       subtotal_paise: amountPaise,
@@ -76,7 +77,7 @@ async function priceJob(jobId: string, ratePaise: number, amountPaise: number) {
       ],
     },
   });
-  if (error) throw error;
+  assertNoError(result, 'save_job_pricing');
 }
 
 beforeAll(async () => {
@@ -95,21 +96,27 @@ beforeAll(async () => {
   await seedStaff(admin, sales, 'sales');
   await seedStaff(admin, designer, 'designer');
 
-  await admin.from('customers').upsert({
-    id: CUSTOMER,
-    name: 'Shreeji Traders',
-    type: 'business',
-    mobile: '9829100022',
-    address: '1 Market Road',
-    city: 'Udaipur',
-    state: 'Rajasthan',
-    pincode: '313001',
-    preferred_language: 'hi',
-    created_by: owner.uid,
-    updated_by: owner.uid,
-  });
-  await seedCustomerAccount(admin, portal, CUSTOMER, 'Shreeji Traders');
-  await admin.from('document_counters').delete().eq('year_key', FY);
+  assertNoError(
+    await admin.from('customers').upsert({
+      id: CUSTOMER,
+      name: 'Shreeji Traders (workflow)',
+      type: 'business',
+      mobile: '9829100099',
+      address: '1 Market Road',
+      city: 'Udaipur',
+      state: 'Rajasthan',
+      pincode: '313001',
+      preferred_language: 'hi',
+      created_by: owner.uid,
+      updated_by: owner.uid,
+    }),
+    'seed workflow customer',
+  );
+  await seedCustomerAccount(admin, portal, CUSTOMER, 'Shreeji Traders (workflow)');
+  // Deliberately not resetting document_counters. The records from previous
+  // runs are still in this database, so restarting the counter would hand out a
+  // number that is already taken. Every assertion below is relative - the next
+  // number is one higher than the last - which is the property that matters.
 });
 
 afterAll(async () => {
@@ -186,36 +193,44 @@ describeIf('the estimate snapshot is a historical record', () => {
     const job = await makeJob('Snapshot');
     await priceJob(job.id, 2500, 120_000);
 
-    const created = await owner.client
-      .rpc('create_estimate', {
-        p_job_id: job.id,
-        p_valid_until: new Date(Date.now() + 15 * 864e5).toISOString(),
-        p_notes: null,
-        p_terms: 'Half in advance.',
-        p_year_key: FY,
-      })
-      .single<{ id: string; estimate_number: string; total_paise: number }>();
-    expect(created.error).toBeNull();
-    expect(created.data?.estimate_number).toMatch(/^EST-\d{4}-\d{4}$/);
+    const created = assertOk(
+      await owner.client
+        .rpc('create_estimate', {
+          p_job_id: job.id,
+          p_valid_until: new Date(Date.now() + 15 * 864e5).toISOString(),
+          p_notes: null,
+          p_terms: 'Half in advance.',
+          p_year_key: FY,
+        })
+        .single<{ id: string; estimate_number: string; total_paise: number }>(),
+      'create_estimate',
+    );
+    expect(created.estimate_number).toMatch(/^EST-\d{4}-\d{4}$/);
 
-    const lines = await owner.client
-      .from('estimate_lines')
-      .select('rate_paise, line_amount_paise')
-      .eq('estimate_id', created.data!.id);
-    expect(lines.data).toHaveLength(1);
-    expect(Number(lines.data?.[0]?.rate_paise)).toBe(2500);
+    const lines = assertOk(
+      await owner.client
+        .from('estimate_lines')
+        .select('rate_paise, line_amount_paise')
+        .eq('estimate_id', created.id),
+      'read estimate_lines',
+    );
+    expect(lines).toHaveLength(1);
+    expect(Number(lines[0]?.rate_paise)).toBe(2500);
 
     // Re-price the job at three times the rate.
     await priceJob(job.id, 7500, 360_000);
 
-    const after = await owner.client
-      .from('estimates')
-      .select('total_paise, estimate_lines(rate_paise)')
-      .eq('id', created.data!.id)
-      .single<{ total_paise: number; estimate_lines: { rate_paise: number }[] }>();
+    const after = assertOk(
+      await owner.client
+        .from('estimates')
+        .select('total_paise, estimate_lines(rate_paise)')
+        .eq('id', created.id)
+        .single<{ total_paise: number; estimate_lines: { rate_paise: number }[] }>(),
+      'read estimate back',
+    );
 
-    expect(Number(after.data?.total_paise)).toBe(120_000);
-    expect(Number(after.data?.estimate_lines[0]?.rate_paise)).toBe(2500);
+    expect(Number(after.total_paise)).toBe(120_000);
+    expect(Number(after.estimate_lines[0]?.rate_paise)).toBe(2500);
   });
 
   it('refuses a quotation for a job that has not been priced', async () => {
@@ -233,42 +248,48 @@ describeIf('the estimate snapshot is a historical record', () => {
   it('refuses to rewrite the snapshot, even for the owner', async () => {
     const job = await makeJob('Immutable');
     await priceJob(job.id, 2500, 120_000);
-    const created = await owner.client
-      .rpc('create_estimate', {
-        p_job_id: job.id,
-        p_valid_until: new Date().toISOString(),
-        p_notes: null,
-        p_terms: null,
-        p_year_key: FY,
-      })
-      .single<{ id: string }>();
+    const created = assertOk(
+      await owner.client
+        .rpc('create_estimate', {
+          p_job_id: job.id,
+          p_valid_until: new Date().toISOString(),
+          p_notes: null,
+          p_terms: null,
+          p_year_key: FY,
+        })
+        .single<{ id: string }>(),
+      'create_estimate',
+    );
 
     const total = await owner.client
       .from('estimates')
       .update({ total_paise: 1, updated_by: owner.uid })
-      .eq('id', created.data!.id);
+      .eq('id', created.id);
     expect(total.error).not.toBeNull();
 
     const line = await owner.client
       .from('estimate_lines')
       .update({ rate_paise: 1 })
-      .eq('estimate_id', created.data!.id);
+      .eq('estimate_id', created.id);
     expect(line.error).not.toBeNull();
   });
 
   it('refuses an invalid status move and keeps the wording locked once sent', async () => {
     const job = await makeJob('Transitions');
     await priceJob(job.id, 2500, 120_000);
-    const created = await owner.client
-      .rpc('create_estimate', {
-        p_job_id: job.id,
-        p_valid_until: new Date().toISOString(),
-        p_notes: null,
-        p_terms: null,
-        p_year_key: FY,
-      })
-      .single<{ id: string }>();
-    const id = created.data!.id;
+    const created = assertOk(
+      await owner.client
+        .rpc('create_estimate', {
+          p_job_id: job.id,
+          p_valid_until: new Date().toISOString(),
+          p_notes: null,
+          p_terms: null,
+          p_year_key: FY,
+        })
+        .single<{ id: string }>(),
+      'create_estimate',
+    );
+    const id = created.id;
 
     // draft cannot jump straight to approved.
     const jump = await owner.client
@@ -322,8 +343,7 @@ describeIf('design versions', () => {
         p_submit_now: submitNow,
       })
       .single<{ id: string; version: number; status: string; file_path: string }>();
-    if (error) throw error;
-    return data;
+    return assertOk({ data, error }, 'create_design_version');
   }
 
   it('numbers versions in order and gives each its own file', async () => {
@@ -512,26 +532,28 @@ describeIf('storage objects are private and written once', () => {
 
 describeIf('the enquiry to job conversion', () => {
   it('writes the job and stamps the enquiry together, and refuses a second time', async () => {
-    const enquiry = await sales.client
-      .rpc('create_enquiry', {
-        p_payload: {
-          customer_id: CUSTOMER,
-          customer_name: 'Shreeji Traders',
-          customer_mobile: '9812300011',
-          enquiry_date: new Date().toISOString(),
-          source: 'walk-in',
-          requirement_text: 'Wedding cards',
-          status: 'new',
-        },
-        p_year_key: FY,
-      })
-      .single<{ id: string; enquiry_number: string }>();
-    expect(enquiry.error).toBeNull();
-    expect(enquiry.data?.enquiry_number).toMatch(/^ENQ-\d{4}-\d{4}$/);
+    const enquiry = assertOk(
+      await sales.client
+        .rpc('create_enquiry', {
+          p_payload: {
+            customer_id: CUSTOMER,
+            customer_name: 'Shreeji Traders',
+            customer_mobile: '9812300011',
+            enquiry_date: new Date().toISOString(),
+            source: 'walk-in',
+            requirement_text: 'Wedding cards',
+            status: 'new',
+          },
+          p_year_key: FY,
+        })
+        .single<{ id: string; enquiry_number: string }>(),
+      'create_enquiry',
+    );
+    expect(enquiry.enquiry_number).toMatch(/^ENQ-\d{4}-\d{4}$/);
 
     const converted = await sales.client
       .rpc('convert_enquiry_to_job', {
-        p_enquiry_id: enquiry.data!.id,
+        p_enquiry_id: enquiry.id,
         p_payload: {
           customer_id: CUSTOMER,
           customer_name: 'Shreeji Traders',
@@ -545,20 +567,23 @@ describeIf('the enquiry to job conversion', () => {
       })
       .single<{ id: string; enquiry_id: string; enquiry_number: string }>();
 
-    expect(converted.error).toBeNull();
-    expect(converted.data?.enquiry_id).toBe(enquiry.data!.id);
-    expect(converted.data?.enquiry_number).toBe(enquiry.data!.enquiry_number);
+    const job = assertOk(converted, 'convert_enquiry_to_job');
+    expect(job.enquiry_id).toBe(enquiry.id);
+    expect(job.enquiry_number).toBe(enquiry.enquiry_number);
 
-    const stamped = await sales.client
-      .from('enquiries')
-      .select('status, converted_job_id')
-      .eq('id', enquiry.data!.id)
-      .single<{ status: string; converted_job_id: string }>();
-    expect(stamped.data?.status).toBe('converted');
-    expect(stamped.data?.converted_job_id).toBe(converted.data!.id);
+    const stamped = assertOk(
+      await sales.client
+        .from('enquiries')
+        .select('status, converted_job_id')
+        .eq('id', enquiry.id)
+        .single<{ status: string; converted_job_id: string }>(),
+      'read enquiry back',
+    );
+    expect(stamped.status).toBe('converted');
+    expect(stamped.converted_job_id).toBe(job.id);
 
     const again = await sales.client.rpc('convert_enquiry_to_job', {
-      p_enquiry_id: enquiry.data!.id,
+      p_enquiry_id: enquiry.id,
       p_payload: {
         customer_id: CUSTOMER,
         customer_name: 'Shreeji Traders',
@@ -574,37 +599,45 @@ describeIf('the enquiry to job conversion', () => {
   });
 
   it('records a follow-up and the status move together', async () => {
-    const enquiry = await sales.client
-      .rpc('create_enquiry', {
-        p_payload: {
-          customer_id: CUSTOMER,
-          customer_name: 'Shreeji Traders',
-          customer_mobile: '9812300011',
-          enquiry_date: new Date().toISOString(),
-          source: 'phone',
-          requirement_text: 'Banner',
-          status: 'new',
-        },
-        p_year_key: FY,
-      })
-      .single<{ id: string }>();
+    const enquiry = assertOk(
+      await sales.client
+        .rpc('create_enquiry', {
+          p_payload: {
+            customer_id: CUSTOMER,
+            customer_name: 'Shreeji Traders',
+            customer_mobile: '9812300011',
+            enquiry_date: new Date().toISOString(),
+            source: 'phone',
+            requirement_text: 'Banner',
+            status: 'new',
+          },
+          p_year_key: FY,
+        })
+        .single<{ id: string }>(),
+      'create_enquiry',
+    );
 
-    const { error } = await sales.client.rpc('add_enquiry_follow_up', {
-      p_enquiry_id: enquiry.data!.id,
-      p_note: 'Shared two paper options',
-      p_by_name: 'sales user',
-      p_status: 'contacted',
-      p_next_follow_up_at: new Date(Date.now() + 864e5).toISOString(),
-    });
-    expect(error).toBeNull();
+    assertNoError(
+      await sales.client.rpc('add_enquiry_follow_up', {
+        p_enquiry_id: enquiry.id,
+        p_note: 'Shared two paper options',
+        p_by_name: 'sales user',
+        p_status: 'contacted',
+        p_next_follow_up_at: new Date(Date.now() + 864e5).toISOString(),
+      }),
+      'add_enquiry_follow_up',
+    );
 
-    const after = await sales.client
-      .from('enquiries')
-      .select('status, enquiry_follow_ups(note)')
-      .eq('id', enquiry.data!.id)
-      .single<{ status: string; enquiry_follow_ups: { note: string }[] }>();
+    const after = assertOk(
+      await sales.client
+        .from('enquiries')
+        .select('status, enquiry_follow_ups(note)')
+        .eq('id', enquiry.id)
+        .single<{ status: string; enquiry_follow_ups: { note: string }[] }>(),
+      'read enquiry with follow-ups',
+    );
 
-    expect(after.data?.status).toBe('contacted');
-    expect(after.data?.enquiry_follow_ups[0]?.note).toBe('Shared two paper options');
+    expect(after.status).toBe('contacted');
+    expect(after.enquiry_follow_ups[0]?.note).toBe('Shared two paper options');
   });
 });
