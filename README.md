@@ -8,10 +8,9 @@ Built as a real commercial application - React + TypeScript on the front end,
 Firebase (Authentication, Cloud Firestore, Cloud Storage, Hosting) on the back
 end, with an architecture that can move to Google Cloud services later.
 
-> **Status: Modules 0-2 complete** - project foundation, authentication with
-> employee account management, and role-based permissions with an audit trail.
-> No other business module has been implemented yet. See
-> [docs/MODULES.md](docs/MODULES.md) for the roadmap.
+> **Status: Modules 0-3 complete** - project foundation, authentication and
+> employee accounts, role-based permissions with an audit trail, and customer
+> management. See [docs/MODULES.md](docs/MODULES.md) for the roadmap.
 
 ---
 
@@ -219,6 +218,45 @@ Somebody with direct database or service-account access could still write or
 withhold entries. Making the trail authoritative requires a Cloud Function using
 the Admin SDK, which needs the Blaze plan.
 
+## Customers
+
+The customer directory lives at `/customers`, with a detail page at
+`/customers/:customerId`. Every role can view customers; owner, admin and sales
+can add and edit them.
+
+**Customers are never deleted.** Enquiries, jobs, estimates and invoices will
+all point at these records, so the only way to take one out of circulation is to
+archive it, which is reversible.
+
+### Search and paging
+
+The directory loads once (up to 1000 customers), caches the result, and then
+searches and pages in the browser. That gives substring search across name,
+business name, mobile, alternate mobile, email, GSTIN and city - typing "kumar"
+finds "Ravi Kumar", and a number typed with spaces or +91 still matches. If a
+business ever exceeds the cap the screen says so rather than quietly showing a
+partial list, and search can move into Firestore behind
+`src/features/customers/services/` without the UI changing.
+
+### Duplicate mobile numbers
+
+If another customer already uses the primary mobile number, the form shows a
+warning with a link to that record and **still allows saving** - families and
+small businesses genuinely share numbers.
+
+### Preferred language
+
+Every customer stores Hindi or English. Nothing uses it yet; it is captured now
+so the future customer portal and any printed or messaged output can honour it
+without a data migration.
+
+### Reserved portal link
+
+Each customer document carries a `portalUserId` field, always `null` today. When
+the customer portal is built it can attach an auth account by writing that one
+field. Module 3 never sets or edits it, and `firestore.rules` rejects any
+ordinary customer edit that tries to change it.
+
 ## Project structure
 
 ```
@@ -232,6 +270,7 @@ src/
   features/
     audit/      Append-only trail of sensitive changes (Module 2)
     auth/       Sign-in, session, route guard plumbing (Module 1)
+    customers/  Customer directory, detail and archiving (Module 3)
     permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)
   hooks/        Shared React hooks

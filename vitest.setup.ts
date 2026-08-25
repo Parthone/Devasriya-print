@@ -1,7 +1,12 @@
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+
+// findBy* queries default to a 1s budget, which is not enough once a session
+// restore, a profile read and a route redirect all have to settle on a busy
+// machine. Five seconds removes the flakiness without hiding real hangs.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();

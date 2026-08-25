@@ -3,6 +3,8 @@ import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-do
 import { ProtectedRoute } from '@/app/router/ProtectedRoute';
 import { NAV_SECTIONS, ROUTES } from '@/constants/routes';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
+import { CustomerDetailPage } from '@/features/customers/pages/CustomerDetailPage';
+import { CustomersPage } from '@/features/customers/pages/CustomersPage';
 import { RolesPage } from '@/features/permissions/pages/RolesPage';
 import { UsersPage } from '@/features/users/pages/UsersPage';
 import { AppLayout } from '@/layouts/AppLayout';
@@ -50,6 +52,22 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['dashboard:view']}>
             <DashboardPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.customers,
+        element: (
+          <ProtectedRoute requires={['customers:view']}>
+            <CustomersPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.customerDetail,
+        element: (
+          <ProtectedRoute requires={['customers:view']}>
+            <CustomerDetailPage />
           </ProtectedRoute>
         ),
       },

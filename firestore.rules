@@ -9,6 +9,7 @@ rules_version = '2';
 // Open collections:
 //   users      (Module 1 - Authentication & Users)
 //   auditLogs  (Module 2 - Roles & Permissions)
+//   customers  (Module 3 - Customer Management)
 //
 // Authorisation mirrors the application permission matrix in
 // src/features/permissions/matrix.ts. Hidden UI is never the control: every
@@ -43,13 +44,15 @@ service cloud.firestore {
     function rolePermissions() {
       return {
         'owner': ['employees:view', 'employees:manage', 'employees:manage-admins',
-                  'settings:view', 'settings:manage'],
-        'admin': ['employees:view', 'employees:manage', 'settings:view'],
-        'sales': [],
-        'designer': [],
-        'production': ['employees:view'],
-        'accounts': [],
-        'viewer': []
+                  'settings:view', 'settings:manage',
+                  'customers:view', 'customers:create', 'customers:edit'],
+        'admin': ['employees:view', 'employees:manage', 'settings:view',
+                  'customers:view', 'customers:create', 'customers:edit'],
+        'sales': ['customers:view', 'customers:create', 'customers:edit'],
+        'designer': ['customers:view'],
+        'production': ['employees:view', 'customers:view'],
+        'accounts': ['customers:view'],
+        'viewer': ['customers:view']
       };
     }
 
@@ -150,6 +153,60 @@ service cloud.firestore {
       allow get, list: if can('employees:manage');
       allow create: if can('employees:manage') && isValidAuditEntry(request.resource.data);
       allow update, delete: if false;
+    }
+
+    // Customers are archived, never deleted: enquiries, jobs, estimates and
+    // invoices all point at these records.
+    match /customers/{customerId} {
+      function requiredCustomerFields() {
+        return ['name', 'nameLower', 'type', 'mobile', 'address', 'city', 'state',
+                'pincode', 'preferredLanguage', 'isArchived', 'portalUserId',
+                'createdAt', 'createdBy', 'updatedAt', 'updatedBy'];
+      }
+
+      function allowedCustomerFields() {
+        return requiredCustomerFields().concat(
+          ['businessName', 'alternateMobile', 'email', 'gstin', 'notes']
+        );
+      }
+
+      function isValidCustomer(data) {
+        return data.keys().hasAll(requiredCustomerFields())
+               && data.keys().hasOnly(allowedCustomerFields())
+               && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
+               && data.nameLower == data.name.lower()
+               && data.type in ['individual', 'business']
+               && data.mobile is string && data.mobile.matches('^[6-9][0-9]{9}$')
+               && data.address is string && data.address.size() >= 3 && data.address.size() <= 400
+               && data.city is string && data.city.size() >= 2 && data.city.size() <= 80
+               && data.state is string && data.state.size() > 1
+               && data.pincode is string && data.pincode.matches('^[1-9][0-9]{5}$')
+               && data.preferredLanguage in ['hi', 'en']
+               && data.isArchived is bool
+               && (data.portalUserId == null || data.portalUserId is string)
+               && data.updatedBy is string;
+      }
+
+      allow get, list: if can('customers:view');
+
+      allow create: if can('customers:create')
+                    && isValidCustomer(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    // The customer portal link is set by the portal module only.
+                    && request.resource.data.portalUserId == null;
+
+      allow update: if can('customers:edit')
+                    && resource != null
+                    && isValidCustomer(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid
+                    // An ordinary edit can never touch the portal account link.
+                    && request.resource.data.portalUserId == resource.data.portalUserId;
+
+      // No role may delete a customer, from any client.
+      allow delete: if false;
     }
 
     match /{document=**} {

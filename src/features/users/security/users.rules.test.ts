@@ -231,10 +231,11 @@ describe('users collection - writing', () => {
   });
 });
 
-describe('every other collection', () => {
-  it('stays denied for administrators too', async () => {
+describe('collections no module has opened yet', () => {
+  it('stay denied for administrators too', async () => {
+    // `customers` is open from Module 3 and has its own rules test.
     const db = testEnv.authenticatedContext(OWNER).firestore();
-    await assertFails(getDocs(collection(db, 'customers')));
+    await assertFails(getDocs(collection(db, 'enquiries')));
     await assertFails(setDoc(doc(db, 'jobs', 'job-1'), { anything: true }));
   });
 });

@@ -13,6 +13,8 @@
  *   designer@devasriya.test  password Design@12345   active designer
  *   inactive@devasriya.test  password Inactive@123   deactivated employee
  *   ghost@devasriya.test     password Ghost@12345    auth account, no profile
+ *
+ * Plus a few sample customers so the directory is not empty while testing.
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
@@ -86,7 +88,7 @@ async function upsertAccount({ email, password, profile }) {
   if (!profile) {
     await db.collection('users').doc(user.uid).delete();
     console.log(`  ${email.padEnd(26)} ${user.uid}  (no profile)`);
-    return;
+    return user.uid;
   }
 
   const now = new Date();
@@ -105,13 +107,83 @@ async function upsertAccount({ email, password, profile }) {
       { merge: true },
     );
   console.log(`  ${email.padEnd(26)} ${user.uid}  ${profile.role}`);
+  return user.uid;
+}
+
+const CUSTOMERS = [
+  {
+    id: 'seed-customer-1',
+    name: 'Ravi Kumar',
+    nameLower: 'ravi kumar',
+    type: 'individual',
+    mobile: '9876500011',
+    email: 'ravi.kumar@example.test',
+    address: '12 Station Road',
+    city: 'Jaipur',
+    state: 'Rajasthan',
+    pincode: '302001',
+    preferredLanguage: 'hi',
+    isArchived: false,
+  },
+  {
+    id: 'seed-customer-2',
+    name: 'Shreeji Traders',
+    nameLower: 'shreeji traders',
+    businessName: 'Shreeji Traders Pvt Ltd',
+    type: 'business',
+    mobile: '9812345678',
+    alternateMobile: '9812345679',
+    email: 'accounts@shreeji.test',
+    address: '4 Market Road',
+    city: 'Udaipur',
+    state: 'Rajasthan',
+    pincode: '313001',
+    gstin: '08AABCU9603R1ZM',
+    preferredLanguage: 'en',
+    notes: 'Monthly flex banner orders',
+    isArchived: false,
+  },
+  {
+    id: 'seed-customer-3',
+    name: 'Old Signage Works',
+    nameLower: 'old signage works',
+    type: 'business',
+    mobile: '9800000000',
+    address: '7 Industrial Area',
+    city: 'Ajmer',
+    state: 'Rajasthan',
+    pincode: '305001',
+    preferredLanguage: 'hi',
+    isArchived: true,
+  },
+];
+
+async function seedCustomers(ownerUid) {
+  const now = new Date();
+  for (const { id, ...customer } of CUSTOMERS) {
+    await db
+      .collection('customers')
+      .doc(id)
+      .set({
+        ...customer,
+        portalUserId: null,
+        createdAt: now,
+        createdBy: ownerUid,
+        updatedAt: now,
+        updatedBy: ownerUid,
+      });
+    console.log(`  customer: ${customer.name}`);
+  }
 }
 
 async function main() {
   console.log(`\n  Seeding emulator project "${projectId}"\n`);
+  let ownerUid = 'seed-owner';
   for (const account of ACCOUNTS) {
-    await upsertAccount(account);
+    const uid = await upsertAccount(account);
+    if (account.profile?.role === 'owner' && uid) ownerUid = uid;
   }
+  await seedCustomers(ownerUid);
   console.log('\n  Done. Set VITE_USE_FIREBASE_EMULATORS=true in .env.local.\n');
 }
 

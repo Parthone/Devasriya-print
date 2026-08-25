@@ -157,7 +157,7 @@ describe('session restore', () => {
 
 describe('sign in', () => {
   it('signs an active employee in and lands on the dashboard', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mocks.signInWithEmail.mockResolvedValue({
       uid: 'uid-staff',
       email: 'designer@devasriya.test',
@@ -175,7 +175,7 @@ describe('sign in', () => {
   });
 
   it('shows an error for invalid credentials and stays signed out', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mocks.signInWithEmail.mockRejectedValue(
       new AppError('unauthenticated', 'You are signed out. Please sign in again.'),
     );
@@ -191,7 +191,7 @@ describe('sign in', () => {
   });
 
   it('rejects a deactivated employee at sign-in and signs them straight back out', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mocks.signInWithEmail.mockResolvedValue({
       uid: 'uid-staff',
       email: 'inactive@devasriya.test',
@@ -213,7 +213,7 @@ describe('sign in', () => {
   });
 
   it('rejects an account with no employee profile', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mocks.signInWithEmail.mockResolvedValue({ uid: 'uid-ghost', email: 'ghost@devasriya.test' });
     mocks.getUserProfile.mockResolvedValue(null);
 
@@ -229,7 +229,7 @@ describe('sign in', () => {
   });
 
   it('validates the form before calling Firebase', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
 
     renderApp('/login');
 
@@ -243,7 +243,7 @@ describe('sign in', () => {
 
 describe('password reset', () => {
   it('sends a reset link without confirming whether the account exists', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mocks.sendPasswordSetupEmail.mockResolvedValue(undefined);
 
     renderApp('/login');
@@ -259,7 +259,7 @@ describe('password reset', () => {
 
 describe('sign out', () => {
   it('signs the user out from the account menu and returns to the sign-in screen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mocks.account = { uid: 'uid-staff', email: 'designer@devasriya.test' };
     mocks.getUserProfile.mockResolvedValue(makeProfile());
 

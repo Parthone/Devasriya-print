@@ -43,6 +43,11 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
+    // Component tests drive real forms and menus through userEvent, which types
+    // character by character; the 5s default is tight once several files run in
+    // parallel on a developer laptop.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     // Security-rules tests need the Firestore emulator: npm run test:rules

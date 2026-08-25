@@ -167,11 +167,53 @@ service-account access could write or withhold entries. A Cloud Function with
 the Admin SDK (Blaze plan) is required to make it authoritative. The same
 applies to the account-provisioning limitation from Module 1.
 
-## Next: Module 3 - Customer Management
+## Module 3 - Customer Management (delivered)
 
-Scope to be confirmed before implementation:
+**Directory** (`/customers`, `customers:view`)
 
-- Customer directory with search and pagination
-- Contacts, addresses and GSTIN
-- Credit terms and outstanding summary
-- Firestore rules and permissions for `customers:*`
+- Substring search across name, business name, mobile, alternate mobile, email,
+  GSTIN and city; numbers match whether typed with spaces, a leading zero or +91
+- Active / archived / all filter, 25 per page
+- Responsive: table on wide screens, cards on phones
+- Empty, loading, error and cap-reached states
+
+**Record**
+
+- Name, business name, type, primary and alternate mobile, email, address, city,
+  state (fixed list of states and union territories), PIN code, GSTIN, preferred
+  language (Hindi or English), notes, archived flag
+- GSTIN is format-validated (15 characters, no checksum) and stored uppercase
+- Duplicate primary mobile numbers warn and link to the existing customer, but
+  are allowed
+
+**Detail page** (`/customers/:customerId`)
+
+- Full record with edit and archive/restore for `customers:edit`
+- No jobs, estimates or billing panels yet - those arrive with their modules
+
+**Data and security**
+
+- `customers` collection; the UI never touches Firestore directly
+- Rules mirror the matrix exactly: all seven roles may read; owner, admin and
+  sales may create and edit; **no role may delete**
+- Field validation in rules: mobile and PIN patterns, known type and language,
+  `nameLower` must match the name, no unexpected fields
+- `createdAt` / `createdBy` immutable; every write attributed to the signed-in user
+- No new composite index: the only query is `orderBy(nameLower)`, which
+  Firestore indexes automatically
+
+**Deliberately excluded**
+
+Customer login (portal module), design or text requests (enquiries and jobs),
+pickup office and assigned contact person (job modules), credit terms and
+outstanding balances (billing).
+
+**Reserved for later**
+
+`portalUserId` is stored as `null` on every customer so the future portal can
+attach an auth account by writing one field. The UI never exposes it and the
+rules forbid ordinary edits from changing it.
+
+## Next: Module 4 - Enquiries & Jobs
+
+Scope to be confirmed before implementation.

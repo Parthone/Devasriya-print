@@ -110,7 +110,7 @@ function renderUsersPage() {
 
 /** Renders the directory and opens the row action menu for one employee. */
 async function openRowMenu(name: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   renderUsersPage();
   await user.click(await screen.findByRole('button', { name: `Actions for ${name}` }));
   return user;
@@ -143,7 +143,7 @@ describe('employee directory', () => {
   });
 
   it('filters the directory by search term', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderUsersPage();
 
     await screen.findByText('Design Studio Staff');
@@ -156,7 +156,7 @@ describe('employee directory', () => {
 
 describe('creating an employee', () => {
   it('sends normalised details to the service and never handles a password', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderUsersPage();
 
     await screen.findByText('Design Studio Staff');
@@ -185,7 +185,7 @@ describe('creating an employee', () => {
   });
 
   it('blocks an invalid mobile number before calling the service', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderUsersPage();
 
     await screen.findByText('Design Studio Staff');
@@ -325,7 +325,7 @@ describe('audit history', () => {
 
 describe('assigning privileged roles', () => {
   it('lets the owner hand out owner and admin roles', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderUsersPage();
     await screen.findByText('Design Studio Staff');
 
@@ -341,7 +341,7 @@ describe('assigning privileged roles', () => {
     mocks.getUserProfile.mockResolvedValue(
       makeProfile({ id: 'uid-owner', name: 'Admin Account', role: 'admin' }),
     );
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderUsersPage();
     await screen.findByText('Design Studio Staff');
 

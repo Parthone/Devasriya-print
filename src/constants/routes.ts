@@ -23,6 +23,7 @@ export const ROUTES = {
   login: '/login',
   dashboard: '/dashboard',
   customers: '/customers',
+  customerDetail: '/customers/:customerId',
   enquiries: '/enquiries',
   jobs: '/jobs',
   measurements: '/measurements',
@@ -88,7 +89,7 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Customers',
         path: ROUTES.customers,
         icon: Users,
-        enabled: false,
+        enabled: true,
         permission: 'customers:view',
       },
       {
