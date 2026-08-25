@@ -13,6 +13,7 @@ import { PortalHomePage } from '@/features/customer-portal/pages/PortalHomePage'
 import { PortalLoginPage } from '@/features/customer-portal/pages/PortalLoginPage';
 import { PortalReviewPage } from '@/features/customer-portal/pages/PortalReviewPage';
 import { DesignsPage } from '@/features/designs/pages/DesignsPage';
+import { DeadlinesPage } from '@/features/production/pages/DeadlinesPage';
 import { ProductionPage } from '@/features/production/pages/ProductionPage';
 import { WorkflowStagesPage } from '@/features/production/pages/WorkflowStagesPage';
 import { JobDetailPage } from '@/features/jobs/pages/JobDetailPage';
@@ -174,6 +175,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['production:view']}>
             <ProductionPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.scheduling,
+        element: (
+          <ProtectedRoute requires={['production:view']}>
+            <DeadlinesPage />
           </ProtectedRoute>
         ),
       },

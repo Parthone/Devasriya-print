@@ -71,7 +71,7 @@ async function tasksFor(jobId: string) {
   return assertOk(
     await production.client
       .from('production_tasks')
-      .select('id, position, status, stage_name, hold_reason, skip_reason')
+      .select('id, position, status, stage_name, hold_reason, skip_reason, assigned_to_name')
       .eq('job_id', jobId)
       .order('position')
       .returns<
@@ -82,6 +82,7 @@ async function tasksFor(jobId: string) {
           stage_name: string;
           hold_reason: string | null;
           skip_reason: string | null;
+          assigned_to_name: string | null;
         }[]
       >(),
     'read production tasks',
@@ -665,5 +666,122 @@ describeIf('the history is not editable', () => {
 
     const deleted = await owner.client.from('production_tasks').delete().eq('id', tasks[0]!.id);
     expect(deleted.error).not.toBeNull();
+  });
+});
+
+describeIf('operations control', () => {
+  it('refuses to hand work to somebody who no longer works here', async () => {
+    const job = await makeJob('Inactive assignee');
+    assertOk(await startRun(production.client, job.id, 'Prod User'), 'start run');
+    const tasks = await tasksFor(job.id);
+
+    assertNoError(
+      await admin.from('staff_profiles').update({ is_active: false }).eq('id', designer.uid),
+      'deactivate the designer',
+    );
+
+    const attempt = await owner.client.rpc('assign_production_task', {
+      p_task_id: tasks[0]!.id,
+      p_assignee_id: designer.uid,
+      p_assignee_name: 'Designer',
+      p_by_name: 'Owner',
+    });
+    expect(attempt.error?.message).toMatch(/not active/i);
+
+    assertNoError(
+      await admin.from('staff_profiles').update({ is_active: true }).eq('id', designer.uid),
+      'reactivate the designer',
+    );
+  });
+
+  it('records who the work was taken from, and trusts the roll for the name', async () => {
+    const job = await makeJob('Reassignment history');
+    const run = assertOk(await startRun(production.client, job.id, 'Prod User'), 'start run');
+    const tasks = await tasksFor(job.id);
+
+    assertNoError(
+      await owner.client.rpc('assign_production_task', {
+        p_task_id: tasks[0]!.id,
+        p_assignee_id: production.uid,
+        // A caller-supplied name is ignored: the history reads the employee
+        // record, so it cannot be made to say somebody else did the work.
+        p_assignee_name: 'Not my real name',
+        p_by_name: 'Owner',
+      }),
+      'first assignment',
+    );
+    assertNoError(
+      await owner.client.rpc('assign_production_task', {
+        p_task_id: tasks[0]!.id,
+        p_assignee_id: designer.uid,
+        p_assignee_name: 'Designer',
+        p_by_name: 'Owner',
+      }),
+      'reassignment',
+    );
+
+    const events = assertOk(
+      await production.client
+        .from('production_events')
+        .select('reason, at')
+        .eq('run_id', run.id)
+        .eq('action', 'stage-assigned')
+        .order('at', { ascending: true })
+        .returns<{ reason: string }[]>(),
+      'read assignment history',
+    );
+
+    expect(events[0]?.reason).toBe('Assigned to production user');
+    expect(events[1]?.reason).toBe('Reassigned from production user to designer user');
+
+    const task = (await tasksFor(job.id))[0];
+    expect(task?.assigned_to_name).toBe('designer user');
+  });
+
+  it('lets a production user work on their own stage but never hand it out', async () => {
+    const job = await makeJob('My work');
+    assertOk(await startRun(production.client, job.id, 'Prod User'), 'start run');
+    const tasks = await tasksFor(job.id);
+
+    assertNoError(
+      await owner.client.rpc('assign_production_task', {
+        p_task_id: tasks[0]!.id,
+        p_assignee_id: production.uid,
+        p_assignee_name: 'Prod User',
+        p_by_name: 'Owner',
+      }),
+      'owner assigns the stage',
+    );
+
+    // It is theirs, and they can get on with it.
+    const mine = assertOk(
+      await production.client
+        .from('production_tasks')
+        .select('id, assigned_to_id')
+        .eq('assigned_to_id', production.uid)
+        .eq('id', tasks[0]!.id)
+        .returns<{ id: string }[]>(),
+      'read my work',
+    );
+    expect(mine).toHaveLength(1);
+
+    assertNoError(
+      await production.client.rpc('advance_production_task', {
+        p_task_id: tasks[0]!.id,
+        p_to_status: 'in-progress',
+        p_reason: null,
+        p_by_name: 'Prod User',
+      }),
+      'work on my own stage',
+    );
+
+    // Passing it on is somebody else's decision.
+    const handOff = await production.client.rpc('assign_production_task', {
+      p_task_id: tasks[0]!.id,
+      p_assignee_id: designer.uid,
+      p_assignee_name: 'Designer',
+      p_by_name: 'Prod User',
+    });
+    expect(handOff.error?.message).toMatch(/permission to assign/i);
   });
 });

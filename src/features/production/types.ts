@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { DEPARTMENTS, type Department } from '@/constants/organization';
+import type { JobPriority, JobStatus } from '@/features/jobs/types';
 import { AppError, type Entity, type Id } from '@/types/common';
 
 export const PRODUCTION_STATUSES = [
@@ -102,6 +103,10 @@ export interface ProductionRun extends Entity {
   startedByName: string;
   completedAt?: Date | null | undefined;
   tasks: ProductionTask[];
+  /** Read live from the job, not snapshotted: a rescheduled delivery moves. */
+  expectedDeliveryDate?: Date | null | undefined;
+  priority?: JobPriority | undefined;
+  jobStatus?: JobStatus | undefined;
 }
 
 export const PRODUCTION_ACTIONS = [

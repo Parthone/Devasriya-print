@@ -2,6 +2,7 @@ import type { Customer } from '@/features/customers/types';
 import { ENQUIRY_STATUSES, type Enquiry, type EnquiryStatus } from '@/features/enquiries/types';
 import type { Design } from '@/features/designs/types';
 import type { Estimate } from '@/features/estimates/types';
+import type { ProductionRun } from '@/features/production/types';
 import { JOB_STATUSES, type Job, type JobStatus } from '@/features/jobs/types';
 import { isDueWithin, isOverdue, isToday } from '@/lib/business-day';
 
@@ -165,4 +166,41 @@ export function summariseDesigns(designs: readonly Design[]): DesignSummary {
   }
 
   return { awaitingCustomer, changesRequested };
+}
+
+export interface ProductionSummary {
+  /** In production and past the delivery date on the job. */
+  overdue: number;
+  /** Stopped for a reason somebody wrote down, waiting on a person. */
+  onHold: number;
+  /** Stages nobody has been given yet. */
+  unassigned: number;
+}
+
+/**
+ * The three production numbers worth putting on a dashboard.
+ *
+ * All about work that needs a person, not progress: a run that is simply
+ * moving along does not belong on a list of things to look at.
+ */
+export function summariseProduction(
+  runs: readonly ProductionRun[],
+  now: Date = new Date(),
+): ProductionSummary {
+  let overdue = 0;
+  let onHold = 0;
+  let unassigned = 0;
+
+  for (const run of runs) {
+    const open = run.tasks.filter(
+      (task) => task.status !== 'completed' && task.status !== 'skipped',
+    );
+    if (open.length === 0) continue;
+
+    if (run.expectedDeliveryDate && isOverdue(run.expectedDeliveryDate, now)) overdue += 1;
+    if (open.some((task) => task.status === 'on-hold')) onHold += 1;
+    unassigned += open.filter((task) => !task.assignedToId).length;
+  }
+
+  return { overdue, onHold, unassigned };
 }

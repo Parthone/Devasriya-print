@@ -1,4 +1,5 @@
 import type { Department } from '@/constants/organization';
+import type { JobPriority, JobStatus } from '@/features/jobs/types';
 import {
   parseWorkflowStage,
   type ProductionAction,
@@ -107,12 +108,14 @@ export interface RunRow extends AuditRow {
   started_by_name: string;
   completed_at: string | null;
   production_tasks?: TaskRow[];
+  jobs?: { expected_delivery_date: string | null; priority: JobPriority; status: JobStatus } | null;
 }
 
 export const RUN_COLUMNS =
   'id, job_id, job_number, job_title, customer_id, customer_name, status,' +
   ' approved_design_id, approved_design_version, started_at, started_by_id,' +
   ' started_by_name, completed_at, created_at, created_by, updated_at, updated_by,' +
+  ' jobs(expected_delivery_date, priority, status),' +
   ` production_tasks(${TASK_COLUMNS})`;
 
 export function toRun(row: RunRow): ProductionRun {

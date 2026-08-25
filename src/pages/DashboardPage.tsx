@@ -2,10 +2,12 @@ import {
   AlarmClock,
   CalendarClock,
   ClipboardList,
+  AlertTriangle,
   FileText,
   Images,
   MailCheck,
   MessageSquare,
+  PauseCircle,
   MessageSquareText,
   PackageCheck,
   Users,
@@ -151,6 +153,34 @@ export function DashboardPage() {
                   value={data.jobSummary.ready}
                   icon={PackageCheck}
                   to={ROUTES.jobs}
+                />
+              </>
+            ) : null}
+
+            {data.canSeeProduction &&
+            (data.productionSummary.overdue > 0 ||
+              data.productionSummary.onHold > 0 ||
+              data.productionSummary.unassigned > 0) ? (
+              <>
+                <KpiCard
+                  label="Overdue in production"
+                  value={data.productionSummary.overdue}
+                  icon={AlertTriangle}
+                  hint="Past the delivery date, still on the floor"
+                  tone="warning"
+                  to={ROUTES.scheduling}
+                />
+                <KpiCard
+                  label="Stopped"
+                  value={data.productionSummary.onHold}
+                  icon={PauseCircle}
+                  hint={
+                    data.productionSummary.unassigned > 0
+                      ? `${String(data.productionSummary.unassigned)} stages unassigned`
+                      : 'Every stage has somebody on it'
+                  }
+                  tone="warning"
+                  to={ROUTES.production}
                 />
               </>
             ) : null}

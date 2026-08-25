@@ -165,14 +165,16 @@ export const MODULES: ModuleDefinition[] = [
   {
     index: 9,
     id: 'assignments',
-    title: 'Employee Assignment',
-    description: 'Assigning jobs and stages to employees with workload visibility.',
-    status: 'planned',
+    title: 'Operations Control',
+    description: 'Who is doing what, what nobody has picked up, and what is running late.',
+    status: 'done',
+    route: ROUTES.scheduling,
     scope: [
-      'Employee records linked to users',
-      'Job and stage assignment',
-      'Workload per employee',
-      'Handover and reassignment',
+      'Assign and reassign stages to active employees only',
+      'My work, unassigned work, and per-employee workload counts',
+      'Department and employee filters on the board',
+      'Overdue, due today and due soon, with priority highlighting',
+      'Reassignment recorded in the production history, from and to',
     ],
   },
   {

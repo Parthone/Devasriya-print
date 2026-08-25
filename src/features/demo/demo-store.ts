@@ -434,7 +434,17 @@ export function updateDemoStage(id: Id, input: WorkflowStageInput, actorId: Id):
 }
 
 export function demoProductionRuns(): ProductionRun[] {
-  return [...productionRuns].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+  return [...productionRuns]
+    .map((run) => {
+      const job = demoJob(run.jobId);
+      return {
+        ...run,
+        expectedDeliveryDate: job?.expectedDeliveryDate ?? null,
+        priority: job?.priority,
+        jobStatus: job?.status,
+      };
+    })
+    .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
 }
 
 export function demoProductionEvents(runId: Id): ProductionEvent[] {
@@ -685,6 +695,18 @@ export function assignDemoTask(
   assignee: { id: Id; name: string } | null,
   actor: { uid: Id; name: string },
 ): ProductionTask {
+  // Same rule the database applies: work cannot be handed to somebody who no
+  // longer works here.
+  if (assignee) {
+    const employee = employees.find((candidate) => candidate.id === assignee.id);
+    if (!employee?.isActive) {
+      throw new AppError(
+        'invalid-input',
+        'That employee is not active, so work cannot be assigned to them.',
+      );
+    }
+  }
+
   const now = new Date();
   let updated: ProductionTask = { ...task };
 
@@ -707,13 +729,23 @@ export function assignDemoTask(
         },
   );
 
+  // The history says what changed, not just that something did - a
+  // reassignment has to record who the work was taken from.
+  const note = !assignee
+    ? `Unassigned from ${task.assignedToName ?? 'nobody'}`
+    : !task.assignedToName
+      ? `Assigned to ${assignee.name}`
+      : task.assignedToId === assignee.id
+        ? `Still assigned to ${assignee.name}`
+        : `Reassigned from ${task.assignedToName} to ${assignee.name}`;
+
   recordDemoProductionEvent({
     runId: task.runId,
     taskId: task.id,
     jobId: task.jobId,
     action: 'stage-assigned',
     stageName: task.stageName,
-    ...(assignee ? { reason: assignee.name } : {}),
+    reason: note,
     at: now,
     byId: actor.uid,
     byName: actor.name,

@@ -1,4 +1,4 @@
-import { Check, Factory, Pause, Play, SkipForward } from 'lucide-react';
+import { Check, Factory, Pause, Play, SkipForward, UserCog } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -7,14 +7,18 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
 import type { Job } from '@/features/jobs/types';
 import { usePermissions } from '@/features/permissions/hooks/use-permissions';
+import { Badge } from '@/components/ui/badge';
+import { AssignTaskDialog } from '@/features/production/components/AssignTaskDialog';
 import { ProductionStatusBadge } from '@/features/production/components/ProductionStatusBadge';
 import { StageActionDialog } from '@/features/production/components/StageActionDialog';
 import {
   useAdvanceTask,
+  useAssignTask,
   useRunEvents,
   useRunForJob,
   useStartProductionRun,
 } from '@/features/production/hooks/use-production';
+import { deadlineStateFor } from '@/features/production/services/production-search';
 import {
   PRODUCTION_ACTION_LABELS,
   canStart,
@@ -38,18 +42,22 @@ export function JobProductionCard({ job }: { job: Job }) {
   const actor = { uid: currentUser.uid, name: currentUser.name };
   const { can } = usePermissions();
   const canUpdate = can('production:update');
+  const canAssign = can('jobs:assign');
 
   const runQuery = useRunForJob(job.id);
   const events = useRunEvents(runQuery.data?.id);
   const start = useStartProductionRun(actor);
   const advance = useAdvanceTask(actor);
+  const assign = useAssignTask(actor);
 
   const [pending, setPending] = useState<{ task: ProductionTask; to: ProductionStatus } | null>(
     null,
   );
+  const [assigning, setAssigning] = useState<ProductionTask | null>(null);
 
   const run = runQuery.data ?? null;
   const progress = run ? runProgress(run) : null;
+  const deadline = run ? deadlineStateFor(run) : 'any';
   const move = (task: ProductionTask, to: ProductionStatus) => {
     advance.mutate({ task, toStatus: to });
   };
@@ -84,15 +92,25 @@ export function JobProductionCard({ job }: { job: Job }) {
               <span>
                 {progress?.done} of {progress?.total} stages finished
               </span>
-              {run.approvedDesignVersion ? (
-                <span className="text-xs text-muted-foreground">
-                  Working from design version {run.approvedDesignVersion}
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  Started with no approved design on file
-                </span>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {job.priority === 'urgent' ? <Badge variant="destructive">Urgent</Badge> : null}
+                {deadline === 'overdue' ? (
+                  <Badge variant="destructive">Overdue</Badge>
+                ) : deadline === 'today' ? (
+                  <Badge variant="warning">Due today</Badge>
+                ) : deadline === 'soon' ? (
+                  <Badge variant="secondary">Due soon</Badge>
+                ) : null}
+                {run.approvedDesignVersion ? (
+                  <span className="text-xs text-muted-foreground">
+                    Working from design version {run.approvedDesignVersion}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Started with no approved design on file
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -190,6 +208,20 @@ export function JobProductionCard({ job }: { job: Job }) {
                       </Button>
                     </div>
                   ) : null}
+
+                  {canAssign && !isSettled(task.status) ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="mt-2"
+                      onClick={() => {
+                        setAssigning(task);
+                      }}
+                    >
+                      <UserCog className="size-4" aria-hidden="true" />
+                      {task.assignedToName ? 'Reassign' : 'Assign'}
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ol>
@@ -211,6 +243,25 @@ export function JobProductionCard({ job }: { job: Job }) {
           </>
         )}
       </CardContent>
+
+      <AssignTaskDialog
+        task={assigning}
+        isSaving={assign.isPending}
+        onCancel={() => {
+          setAssigning(null);
+        }}
+        onConfirm={(assignee) => {
+          if (!assigning) return;
+          assign.mutate(
+            { task: assigning, assignee },
+            {
+              onSettled: () => {
+                setAssigning(null);
+              },
+            },
+          );
+        }}
+      />
 
       <StageActionDialog
         task={pending?.task ?? null}

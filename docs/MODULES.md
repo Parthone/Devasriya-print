@@ -607,3 +607,54 @@ records directly.
 
 Workload and capacity assignment - that is Module 9. This module records who is
 doing a stage; it does not decide who should be.
+
+## Module 9 - Operations Control (delivered)
+
+Module 8 answered "what happens next". This answers "who is doing it, and what
+is late".
+
+**Assignment**
+
+Only `jobs:assign` can hand work out - doing the work (`production:update`) does
+not include deciding who does it. That rule is a trigger on the table rather
+than a column grant, because permissive policies OR their `WITH CHECK` clauses
+together and a grant alone could not express it.
+
+Only active employees can be given work. A stage assigned to somebody who has
+left is work nobody is doing that looks exactly like work somebody is doing, so
+the RPC refuses it and the picker never offers them.
+
+The assignee's name is read from the employee record rather than trusted from
+the caller, so the history cannot be made to say somebody else did the work.
+
+**Reassignment history**
+
+Every assignment writes a `stage-assigned` event saying what actually changed:
+`Assigned to X`, `Reassigned from X to Y`, or `Unassigned from X`. "Assigned"
+on its own is not a history - it cannot answer why a job sat still for two days.
+
+**The board** (`/production`)
+
+Scope (all / my work / unassigned), stage status, delivery date, department and
+employee, plus open-work counts per person. Everything a supervisor asks in a
+morning, on one screen.
+
+**Deadlines** (`/scheduling`)
+
+Overdue, due today, due soon - each showing the current stage, who holds it and
+the delivery date, with urgent jobs marked. Delivery dates are read live from
+the job rather than snapshotted onto the run: rescheduling a delivery has to
+move the board.
+
+A run whose every stage is finished is never called late. It is waiting to be
+collected, which is a different problem.
+
+**Dashboard**
+
+Two lightweight alerts gated on `production:view`: overdue in production, and
+stopped work with the count of unassigned stages.
+
+**Deliberately excluded**
+
+Attendance, payroll, shifts, capacity planning and notifications. This module
+records who is doing a stage; it does not decide who should be.

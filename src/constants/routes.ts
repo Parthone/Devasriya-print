@@ -156,7 +156,7 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Deadlines',
         path: ROUTES.scheduling,
         icon: CalendarClock,
-        enabled: false,
+        enabled: true,
         permission: 'production:view',
       },
       {

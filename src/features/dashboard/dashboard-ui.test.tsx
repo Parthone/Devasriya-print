@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   listJobs: vi.fn(),
   listEstimates: vi.fn(),
   listDesigns: vi.fn(),
+  listProductionRuns: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
@@ -73,6 +74,19 @@ vi.mock('@/features/jobs/services/job.service', () => ({
   createJob: vi.fn(),
   updateJob: vi.fn(),
   assignJob: vi.fn(),
+}));
+
+vi.mock('@/features/production/services/production.service', () => ({
+  RUN_FETCH_CAP: 500,
+  listWorkflowStages: vi.fn().mockResolvedValue([]),
+  createWorkflowStage: vi.fn(),
+  updateWorkflowStage: vi.fn(),
+  listProductionRuns: mocks.listProductionRuns,
+  findRunForJob: vi.fn().mockResolvedValue(null),
+  listRunEvents: vi.fn().mockResolvedValue([]),
+  startProductionRun: vi.fn(),
+  advanceProductionTask: vi.fn(),
+  assignProductionTask: vi.fn(),
 }));
 
 vi.mock('@/features/designs/services/design.service', () => ({
@@ -291,6 +305,7 @@ beforeEach(() => {
   mocks.listJobs.mockResolvedValue({ jobs: JOBS, capReached: false, cap: 500 });
   mocks.listEstimates.mockResolvedValue({ estimates: [], capReached: false, cap: 500 });
   mocks.listDesigns.mockResolvedValue({ designs: [], capReached: false, cap: 500 });
+  mocks.listProductionRuns.mockResolvedValue([]);
 });
 
 describe('KPI cards', () => {

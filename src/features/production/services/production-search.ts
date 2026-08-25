@@ -1,9 +1,11 @@
+import { DUE_SOON_DAYS } from '@/features/dashboard/services/dashboard-metrics';
 import {
   currentTask,
   isSettled,
   type ProductionRun,
   type ProductionStatus,
 } from '@/features/production/types';
+import { isDueWithin, isOverdue, isToday } from '@/lib/business-day';
 
 /** The four buckets the production screen offers. */
 export type ProductionFilter = 'ready' | 'in-progress' | 'on-hold' | 'completed' | 'all';
@@ -67,4 +69,140 @@ export function countByBucket(runs: readonly ProductionRun[]): Record<Production
   };
   for (const run of runs) counts[bucketFor(run)] += 1;
   return counts;
+}
+
+// ── Module 9: operations control ───────────────────────────────────────────
+
+/** Whose work the board is showing. */
+export type WorkScope = 'all' | 'mine' | 'unassigned';
+
+export const WORK_SCOPES: { value: WorkScope; label: string }[] = [
+  { value: 'all', label: 'All work' },
+  { value: 'mine', label: 'My work' },
+  { value: 'unassigned', label: 'Unassigned' },
+];
+
+export type DeadlineFilter = 'any' | 'overdue' | 'today' | 'soon';
+
+export const DEADLINE_FILTERS: { value: DeadlineFilter; label: string }[] = [
+  { value: 'any', label: 'Any date' },
+  { value: 'overdue', label: 'Overdue' },
+  { value: 'today', label: 'Due today' },
+  { value: 'soon', label: 'Due soon' },
+];
+
+/**
+ * How a run sits against its delivery date.
+ *
+ * Only the stage still to be done matters here: a run whose every stage is
+ * finished is not overdue, it is waiting to be collected.
+ */
+export function deadlineStateFor(run: ProductionRun, now: Date = new Date()): DeadlineFilter {
+  const due = run.expectedDeliveryDate;
+  if (!due || bucketFor(run) === 'completed') return 'any';
+  if (isOverdue(due, now)) return 'overdue';
+  if (isToday(due, now)) return 'today';
+  if (isDueWithin(due, DUE_SOON_DAYS, now)) return 'soon';
+  return 'any';
+}
+
+function matchesScope(run: ProductionRun, scope: WorkScope, uid: string): boolean {
+  if (scope === 'all') return true;
+  const open = run.tasks.filter((task) => !isSettled(task.status));
+  if (scope === 'unassigned') return open.some((task) => !task.assignedToId);
+  return open.some((task) => task.assignedToId === uid);
+}
+
+export interface BoardQuery {
+  term: string;
+  status: ProductionFilter;
+  scope: WorkScope;
+  deadline: DeadlineFilter;
+  department: string;
+  assigneeId: string;
+  uid: string;
+  now?: Date;
+}
+
+/** Everything the board filters on, in one pass. */
+export function queryRuns(runs: readonly ProductionRun[], query: BoardQuery): ProductionRun[] {
+  const now = query.now ?? new Date();
+
+  return runs.filter((run) => {
+    if (!matchesFilter(run, query.status) || !matchesTerm(run, query.term)) return false;
+    if (!matchesScope(run, query.scope, query.uid)) return false;
+    if (query.deadline !== 'any' && deadlineStateFor(run, now) !== query.deadline) return false;
+
+    const open = run.tasks.filter((task) => !isSettled(task.status));
+    if (query.department !== 'all' && !open.some((task) => task.department === query.department)) {
+      return false;
+    }
+    if (
+      query.assigneeId !== 'all' &&
+      !open.some((task) => task.assignedToId === query.assigneeId)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export interface WorkloadEntry {
+  id: string;
+  name: string;
+  open: number;
+}
+
+/**
+ * How much unfinished work each person is holding.
+ *
+ * Counts stages still to be done, not stages ever touched: the question this
+ * answers is "who has too much on right now", and finished work is not on.
+ */
+export function workloadFor(runs: readonly ProductionRun[]): {
+  assigned: WorkloadEntry[];
+  unassigned: number;
+} {
+  const byPerson = new Map<string, WorkloadEntry>();
+  let unassigned = 0;
+
+  for (const run of runs) {
+    for (const task of run.tasks) {
+      if (isSettled(task.status)) continue;
+      if (!task.assignedToId) {
+        unassigned += 1;
+        continue;
+      }
+      const existing = byPerson.get(task.assignedToId);
+      if (existing) {
+        existing.open += 1;
+      } else {
+        byPerson.set(task.assignedToId, {
+          id: task.assignedToId,
+          name: task.assignedToName ?? 'Unnamed',
+          open: 1,
+        });
+      }
+    }
+  }
+
+  return {
+    assigned: [...byPerson.values()].sort(
+      (a, b) => b.open - a.open || a.name.localeCompare(b.name),
+    ),
+    unassigned,
+  };
+}
+
+/** Runs needing attention on a date, worst first. Used by the deadlines screen. */
+export function byDeadline(
+  runs: readonly ProductionRun[],
+  state: Exclude<DeadlineFilter, 'any'>,
+  now: Date = new Date(),
+): ProductionRun[] {
+  return runs
+    .filter((run) => deadlineStateFor(run, now) === state)
+    .sort(
+      (a, b) => (a.expectedDeliveryDate?.getTime() ?? 0) - (b.expectedDeliveryDate?.getTime() ?? 0),
+    );
 }

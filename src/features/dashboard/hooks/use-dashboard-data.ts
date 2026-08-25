@@ -7,6 +7,8 @@ import type { Enquiry } from '@/features/enquiries/types';
 import { useDesignDirectory } from '@/features/designs/hooks/use-designs';
 import type { Design } from '@/features/designs/types';
 import { useEstimateDirectory } from '@/features/estimates/hooks/use-estimates';
+import { useProductionRuns } from '@/features/production/hooks/use-production';
+import type { ProductionRun } from '@/features/production/types';
 import type { Estimate } from '@/features/estimates/types';
 import { useJobDirectory } from '@/features/jobs/hooks/use-jobs';
 import type { Job } from '@/features/jobs/types';
@@ -17,11 +19,13 @@ import {
   summariseDesigns,
   summariseEstimates,
   summariseJobs,
+  summariseProduction,
   type CustomerSummary,
   type EnquirySummary,
   type DesignSummary,
   type EstimateSummary,
   type JobSummary,
+  type ProductionSummary,
 } from '@/features/dashboard/services/dashboard-metrics';
 import {
   buildRecentUpdates,
@@ -35,18 +39,21 @@ export interface DashboardData {
   canSeeJobs: boolean;
   canSeeEstimates: boolean;
   canSeeDesigns: boolean;
+  canSeeProduction: boolean;
 
   customers: Customer[];
   enquiries: Enquiry[];
   jobs: Job[];
   estimates: Estimate[];
   designs: Design[];
+  productionRuns: ProductionRun[];
 
   customerSummary: CustomerSummary;
   enquirySummary: EnquirySummary;
   jobSummary: JobSummary;
   estimateSummary: EstimateSummary;
   designSummary: DesignSummary;
+  productionSummary: ProductionSummary;
   recentUpdates: RecentUpdate[];
 
   isPending: boolean;
@@ -71,24 +78,31 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
   const canSeeJobs = can('jobs:view');
   const canSeeEstimates = can('estimates:view');
   const canSeeDesigns = can('designs:view');
+  const canSeeProduction = can('production:view');
 
   const customerQuery = useCustomerDirectory({ enabled: canSeeCustomers });
   const enquiryQuery = useEnquiryDirectory({ enabled: canSeeEnquiries });
   const jobQuery = useJobDirectory({ enabled: canSeeJobs });
   const estimateQuery = useEstimateDirectory({ enabled: canSeeEstimates });
   const designQuery = useDesignDirectory({ enabled: canSeeDesigns });
+  const productionQuery = useProductionRuns({ enabled: canSeeProduction });
 
   const customers = useMemo(() => customerQuery.data?.customers ?? [], [customerQuery.data]);
   const enquiries = useMemo(() => enquiryQuery.data?.enquiries ?? [], [enquiryQuery.data]);
   const jobs = useMemo(() => jobQuery.data?.jobs ?? [], [jobQuery.data]);
   const estimates = useMemo(() => estimateQuery.data?.estimates ?? [], [estimateQuery.data]);
   const designs = useMemo(() => designQuery.data?.designs ?? [], [designQuery.data]);
+  const productionRuns = useMemo(() => productionQuery.data ?? [], [productionQuery.data]);
 
   const customerSummary = useMemo(() => summariseCustomers(customers), [customers]);
   const enquirySummary = useMemo(() => summariseEnquiries(enquiries, now), [enquiries, now]);
   const jobSummary = useMemo(() => summariseJobs(jobs, now), [jobs, now]);
   const estimateSummary = useMemo(() => summariseEstimates(estimates, now), [estimates, now]);
   const designSummary = useMemo(() => summariseDesigns(designs), [designs]);
+  const productionSummary = useMemo(
+    () => summariseProduction(productionRuns, now),
+    [productionRuns, now],
+  );
   const recentUpdates = useMemo(
     () => buildRecentUpdates(customers, enquiries, jobs),
     [customers, enquiries, jobs],
@@ -100,6 +114,7 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
     canSeeJobs ? jobQuery : null,
     canSeeEstimates ? estimateQuery : null,
     canSeeDesigns ? designQuery : null,
+    canSeeProduction ? productionQuery : null,
   ].filter((query) => query !== null);
 
   return {
@@ -108,16 +123,19 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
     canSeeJobs,
     canSeeEstimates,
     canSeeDesigns,
+    canSeeProduction,
     customers,
     enquiries,
     jobs,
     estimates,
     designs,
+    productionRuns,
     customerSummary,
     enquirySummary,
     jobSummary,
     estimateSummary,
     designSummary,
+    productionSummary,
     recentUpdates,
     isPending: activeQueries.some((query) => query.isPending),
     isError: activeQueries.some((query) => query.isError),
@@ -128,6 +146,7 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
       enquiries.length === 0 &&
       jobs.length === 0 &&
       estimates.length === 0 &&
-      designs.length === 0,
+      designs.length === 0 &&
+      productionRuns.length === 0,
   };
 }
