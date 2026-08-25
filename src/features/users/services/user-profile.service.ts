@@ -1,7 +1,15 @@
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 
+import { isDemoMode } from '@/config/demo';
 import { buildAuditDocument } from '@/features/audit/services/audit.service';
 import type { AuditActor, AuditEntryDraft } from '@/features/audit/types';
+import {
+  addDemoEmployee,
+  demoEmployee,
+  demoEmployees,
+  recordDemoAuditEvent,
+  updateDemoEmployee,
+} from '@/features/demo/demo-store';
 import { parseUserProfile, type EmployeeUpdateInput } from '@/features/users/types';
 import { getDb } from '@/lib/firebase/client';
 import { toAppError } from '@/lib/firebase/errors';
@@ -24,6 +32,8 @@ export const userProfileRepository = new FirestoreRepository<UserProfile>(
  * the session resolver rejects it either way.
  */
 export async function getUserProfile(uid: Id): Promise<UserProfile | null> {
+  if (isDemoMode()) return demoEmployee(uid);
+
   try {
     return await userProfileRepository.findById(uid);
   } catch (error) {
@@ -36,6 +46,8 @@ export async function getUserProfile(uid: Id): Promise<UserProfile | null> {
 }
 
 export async function listUserProfiles(): Promise<UserProfile[]> {
+  if (isDemoMode()) return demoEmployees();
+
   const page = await userProfileRepository.list({
     constraints: [orderBy('name', 'asc')],
     pageSize: 200,
@@ -73,6 +85,24 @@ export async function createUserProfile(
   input: CreateUserProfileInput,
   actor: AuditActor,
 ): Promise<UserProfile> {
+  if (isDemoMode()) {
+    const created = addDemoEmployee(input, actor.uid);
+    recordDemoAuditEvent({
+      action: 'employee-created',
+      targetUserId: created.id,
+      targetName: created.name,
+      actorId: actor.uid,
+      actorName: actor.name,
+      before: '',
+      after: `${USER_ROLE_LABELS[created.role]}, ${created.isActive ? 'active' : 'inactive'}`,
+      createdAt: created.createdAt,
+      createdBy: actor.uid,
+      updatedAt: created.createdAt,
+      updatedBy: actor.uid,
+    });
+    return created;
+  }
+
   try {
     const db = getDb();
     await commitWithAudit(
@@ -160,6 +190,22 @@ export async function updateUserProfile(
 ): Promise<void> {
   guardSelfChange(uid, actor.uid, previous, changes);
 
+  if (isDemoMode()) {
+    updateDemoEmployee(uid, changes, actor.uid);
+    for (const draft of diffProfile(previous, changes)) {
+      recordDemoAuditEvent({
+        ...draft,
+        actorId: actor.uid,
+        actorName: actor.name,
+        createdAt: new Date(),
+        createdBy: actor.uid,
+        updatedAt: new Date(),
+        updatedBy: actor.uid,
+      });
+    }
+    return;
+  }
+
   try {
     const db = getDb();
     await commitWithAudit(
@@ -185,6 +231,24 @@ export async function setUserActive(
 ): Promise<void> {
   if (target.id === actor.uid) {
     throw new AppError('invalid-input', 'You cannot change your own account status.');
+  }
+
+  if (isDemoMode()) {
+    updateDemoEmployee(target.id, { isActive }, actor.uid);
+    recordDemoAuditEvent({
+      action: 'status-changed',
+      targetUserId: target.id,
+      targetName: target.name,
+      actorId: actor.uid,
+      actorName: actor.name,
+      before: target.isActive ? 'Active' : 'Inactive',
+      after: isActive ? 'Active' : 'Inactive',
+      createdAt: new Date(),
+      createdBy: actor.uid,
+      updatedAt: new Date(),
+      updatedBy: actor.uid,
+    });
+    return;
   }
 
   try {

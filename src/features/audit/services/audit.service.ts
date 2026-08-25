@@ -1,6 +1,8 @@
 import { orderBy, serverTimestamp, where, type DocumentData } from 'firebase/firestore';
 
+import { isDemoMode } from '@/config/demo';
 import type { AuditActor, AuditEntryDraft, AuditEvent } from '@/features/audit/types';
+import { demoAuditEventsFor } from '@/features/demo/demo-store';
 import { parseAuditEvent } from '@/features/audit/types';
 import { COLLECTIONS } from '@/services/base/collections';
 import { FirestoreRepository } from '@/services/base/repository';
@@ -35,6 +37,8 @@ export function buildAuditDocument(draft: AuditEntryDraft, actor: AuditActor): D
 
 /** Most recent entries for one employee, newest first. */
 export async function listAuditEventsForUser(userId: Id, pageSize = 50): Promise<AuditEvent[]> {
+  if (isDemoMode()) return demoAuditEventsFor(userId);
+
   const page = await auditRepository.list({
     constraints: [where('targetUserId', '==', userId), orderBy('createdAt', 'desc')],
     pageSize,

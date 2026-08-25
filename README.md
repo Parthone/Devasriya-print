@@ -257,6 +257,42 @@ the customer portal is built it can attach an auth account by writing that one
 field. Module 3 never sets or edits it, and `firestore.rules` rejects any
 ordinary customer edit that tries to change it.
 
+## Demo mode (temporary)
+
+`VITE_DEMO_MODE=true` turns the app into a self-contained UI demo for the
+GitHub Pages build, where there is no Firebase project to talk to.
+
+```bash
+VITE_DEMO_MODE=true npm run dev     # or set it in .env.local
+```
+
+What changes:
+
+- The sign-in screen shows a **Demo Mode** label and one **Enter Demo** button.
+  No email, no password, nothing validated.
+- Clicking it creates a local **Demo Owner** session
+  (`demo@devasriya.local`, role Owner) with the full owner permission matrix,
+  kept in `sessionStorage` so a refresh keeps the demo going for that tab.
+- Firebase is never contacted: no session restore, no sign-in, no Firestore
+  reads. The Firebase auth provider is not even mounted.
+- Screens are served from small fixed datasets - six customers, five employees
+  and a couple of audit entries.
+- Add, edit and archive work **in memory** for the current page load, so the
+  forms and dialogs can be demonstrated. A reload restores the sample data.
+
+What does not change:
+
+- With `VITE_DEMO_MODE` unset or `false` the application behaves exactly as
+  before: Firebase sign-in, session restore, profile and active checks,
+  permissions and Firestore-backed data.
+- No production authentication or data-access code was removed or weakened.
+- Security rules are untouched. Demo mode is a browser-side build flag; it
+  cannot grant access to any real project.
+
+Demo mode lives in `src/config/demo.ts` and `src/features/demo/`. Removing it
+later means deleting that folder, the `isDemoMode()` branches in the services,
+and the provider switch in `AppProviders`.
+
 ## Project structure
 
 ```
@@ -271,6 +307,7 @@ src/
     audit/      Append-only trail of sensitive changes (Module 2)
     auth/       Sign-in, session, route guard plumbing (Module 1)
     customers/  Customer directory, detail and archiving (Module 3)
+    demo/       Temporary demo-mode session and sample data
     permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)
   hooks/        Shared React hooks

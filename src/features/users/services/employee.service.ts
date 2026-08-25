@@ -1,5 +1,5 @@
 import type { AuditActor } from '@/features/audit/types';
-import { userAccountProvisioner } from '@/features/users/services/provisioning';
+import { getUserAccountProvisioner } from '@/features/users/services/provisioning';
 import type { UserAccountProvisioner } from '@/features/users/services/provisioning/types';
 import {
   createUserProfile,
@@ -19,10 +19,9 @@ export interface CreateEmployeeDeps {
   ) => Promise<UserProfile>;
 }
 
-const defaultDeps: CreateEmployeeDeps = {
-  provisioner: userAccountProvisioner,
-  createProfile: createUserProfile,
-};
+function defaultDeps(): CreateEmployeeDeps {
+  return { provisioner: getUserAccountProvisioner(), createProfile: createUserProfile };
+}
 
 /**
  * Creates a staff member: sign-in account, profile document, password email.
@@ -36,7 +35,7 @@ const defaultDeps: CreateEmployeeDeps = {
 export async function createEmployee(
   input: EmployeeInput,
   actor: AuditActor,
-  deps: CreateEmployeeDeps = defaultDeps,
+  deps: CreateEmployeeDeps = defaultDeps(),
 ): Promise<UserProfile> {
   const account = await deps.provisioner.createAccount(input.email);
 
@@ -78,7 +77,7 @@ export async function updateEmployee(
 
 export async function resendPasswordSetupEmail(
   email: string,
-  provisioner: UserAccountProvisioner = userAccountProvisioner,
+  provisioner: UserAccountProvisioner = getUserAccountProvisioner(),
 ): Promise<void> {
   await provisioner.sendPasswordSetupEmail(email);
 }

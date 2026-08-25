@@ -1,8 +1,17 @@
 import { deleteField, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 import { parseCustomer, type Customer, type CustomerInput } from '@/features/customers/types';
+import { isDemoMode } from '@/config/demo';
+import {
+  addDemoCustomer,
+  demoCustomer,
+  demoCustomers,
+  setDemoCustomerArchived,
+  updateDemoCustomer,
+} from '@/features/demo/demo-store';
 import { getDb } from '@/lib/firebase/client';
 import { toAppError } from '@/lib/firebase/errors';
+import { AppError } from '@/types/common';
 import { COLLECTIONS } from '@/services/base/collections';
 import { FirestoreRepository, orderBy } from '@/services/base/repository';
 import type { Id } from '@/types/common';
@@ -32,6 +41,10 @@ export interface CustomerDirectory {
 }
 
 export async function listCustomers(): Promise<CustomerDirectory> {
+  if (isDemoMode()) {
+    return { customers: demoCustomers(), capReached: false, cap: CUSTOMER_FETCH_CAP };
+  }
+
   const page = await customerRepository.list({
     constraints: [orderBy('nameLower', 'asc')],
     pageSize: CUSTOMER_FETCH_CAP,
@@ -48,10 +61,16 @@ export async function listCustomers(): Promise<CustomerDirectory> {
 }
 
 export async function getCustomer(id: Id): Promise<Customer> {
+  if (isDemoMode()) {
+    const customer = demoCustomer(id);
+    if (!customer) throw new AppError('not-found', `No customer with id "${id}".`);
+    return customer;
+  }
   return customerRepository.getById(id);
 }
 
 export async function findCustomer(id: Id): Promise<Customer | null> {
+  if (isDemoMode()) return demoCustomer(id);
   return customerRepository.findById(id);
 }
 
@@ -65,6 +84,8 @@ function documentFor(input: CustomerInput, actorId: Id) {
 }
 
 export async function createCustomer(input: CustomerInput, actorId: Id): Promise<Customer> {
+  if (isDemoMode()) return addDemoCustomer(input, actorId);
+
   try {
     const id = customerRepository.newId();
     await setDoc(doc(getDb(), COLLECTIONS.customers, id), {
@@ -98,6 +119,11 @@ export async function createCustomer(input: CustomerInput, actorId: Id): Promise
  * an ordinary edit cannot overwrite them; the security rules enforce the same.
  */
 export async function updateCustomer(id: Id, input: CustomerInput, actorId: Id): Promise<void> {
+  if (isDemoMode()) {
+    updateDemoCustomer(id, input, actorId);
+    return;
+  }
+
   try {
     await updateDoc(doc(getDb(), COLLECTIONS.customers, id), {
       ...documentFor(input, actorId),
@@ -116,6 +142,11 @@ export async function updateCustomer(id: Id, input: CustomerInput, actorId: Id):
 
 /** Customers are archived, never deleted: their history must stay intact. */
 export async function setCustomerArchived(id: Id, isArchived: boolean, actorId: Id): Promise<void> {
+  if (isDemoMode()) {
+    setDemoCustomerArchived(id, isArchived, actorId);
+    return;
+  }
+
   try {
     await updateDoc(doc(getDb(), COLLECTIONS.customers, id), {
       isArchived,

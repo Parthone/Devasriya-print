@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/components/common/ThemeToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { APP_CONFIG } from '@/config/app.config';
+import { DEMO_LABEL, isDemoMode } from '@/config/demo';
 import { NAV_SECTIONS } from '@/constants/routes';
 import { UserMenu } from '@/features/auth/components/UserMenu';
 import { usePermissions } from '@/features/permissions/hooks/use-permissions';
@@ -121,6 +122,12 @@ export function AppLayout() {
           >
             <Menu className="size-4" aria-hidden="true" />
           </Button>
+
+          {isDemoMode() ? (
+            <Badge variant="secondary" className="hidden sm:inline-flex">
+              {DEMO_LABEL}
+            </Badge>
+          ) : null}
 
           <div className="flex-1" />
 

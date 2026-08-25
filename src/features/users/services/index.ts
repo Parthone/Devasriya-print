@@ -12,5 +12,5 @@ export {
   setUserActive,
   userProfileRepository,
 } from './user-profile.service';
-export { userAccountProvisioner } from './provisioning';
+export { getUserAccountProvisioner } from './provisioning';
 export type { UserAccountProvisioner } from './provisioning/types';
