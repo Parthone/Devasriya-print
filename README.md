@@ -362,6 +362,34 @@ jobs; production edits jobs; accounts sees jobs but not enquiries; only owner an
 admin assign work. Assignment controls only appear for roles that already hold
 the matching permission, so nobody needed extra access to the staff directory.
 
+## Dashboard
+
+The dashboard is the operational overview: KPI tiles, a "needs attention" panel,
+the enquiry pipeline and job breakdown, upcoming deliveries, recent updates and
+permission-aware quick actions.
+
+Two things worth knowing about how it works:
+
+- **It costs no extra reads.** Every number is derived in the browser from the
+  same cached customer, enquiry and job queries the directory screens use. There
+  are no counting queries and no dashboard collection. A source is only fetched
+  when the signed-in role may read it, so a role such as accounts - which has no
+  `enquiries:view` - never issues a request for enquiries, and sees no enquiry
+  sections at all.
+- **Dates are business dates.** "Today", "overdue" and "due in the next three
+  days" are calendar days in Asia/Kolkata (`src/lib/business-day.ts`), so work
+  does not jump to the wrong day late in the evening when UTC has already rolled
+  over. Overdue and due-soon are strictly separate, so nothing is counted twice.
+
+**Recent updates** is built from the `createdAt`, `updatedAt` and `convertedAt`
+timestamps that already exist on records - it shows the latest change per
+record, newest first. It is not an audit log and does not claim to be: two edits
+to the same job appear as one entry. A real business-event log can come later if
+it is ever needed; the employee audit trail from Module 2 is unaffected.
+
+With no data at all, the dashboard shows a short "Get started" panel instead of
+a wall of zeros - with an action only for someone who may add a customer.
+
 ## Project structure
 
 ```
@@ -376,6 +404,7 @@ src/
     audit/      Append-only trail of sensitive changes (Module 2)
     auth/       Sign-in, session, route guard plumbing (Module 1)
     customers/  Customer directory, detail and archiving (Module 3)
+    dashboard/  Operational overview derived from the other features
     enquiries/  Enquiry intake, follow-ups, voice requirements (Module 4)
     jobs/       Jobs, conversion from enquiries, assignment (Module 4)
     locations/  Pickup offices and their contact people (Module 4)

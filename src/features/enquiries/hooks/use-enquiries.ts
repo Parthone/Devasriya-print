@@ -27,8 +27,14 @@ function describe(error: unknown, fallback: string): string {
   return error instanceof AppError ? error.message : fallback;
 }
 
-export function useEnquiryDirectory(): UseQueryResult<EnquiryDirectory, Error> {
-  return useQuery({ queryKey: ENQUIRIES_QUERY_KEY, queryFn: listEnquiries });
+export function useEnquiryDirectory(
+  options: { enabled?: boolean } = {},
+): UseQueryResult<EnquiryDirectory, Error> {
+  return useQuery({
+    queryKey: ENQUIRIES_QUERY_KEY,
+    queryFn: listEnquiries,
+    enabled: options.enabled ?? true,
+  });
 }
 
 export function useEnquiry(id: Id | undefined): UseQueryResult<Enquiry | null, Error> {

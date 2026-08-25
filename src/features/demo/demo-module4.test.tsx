@@ -239,3 +239,52 @@ describe('demo session survives navigation', () => {
     expectNoFirebaseCalls();
   });
 });
+
+describe('demo dashboard', () => {
+  it('shows real counts from the sample data without touching Firebase', async () => {
+    renderDemoApp(ROUTES.dashboard);
+
+    expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
+    await screen.findByText('Recent updates');
+
+    // Six demo customers, one archived.
+    expect(screen.getByRole('link', { name: 'Customers: 5' })).toBeInTheDocument();
+    // Two of the three demo enquiries are still open.
+    expect(screen.getByRole('link', { name: 'Open enquiries: 2' })).toBeInTheDocument();
+    // Both demo jobs are active.
+    expect(screen.getByRole('link', { name: 'Active jobs: 2' })).toBeInTheDocument();
+
+    expect(screen.getByText('Enquiry pipeline')).toBeInTheDocument();
+    expect(screen.getByText('Job overview')).toBeInTheDocument();
+    expect(screen.getByText('Upcoming deliveries')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('lists demo jobs with their pickup office in upcoming deliveries', async () => {
+    renderDemoApp(ROUTES.dashboard);
+    await screen.findByText('Upcoming deliveries');
+
+    const table = within(await screen.findByRole('table'));
+    expect(table.getByText('JOB-2627-0001')).toBeInTheDocument();
+    expect(table.getByText('City Branch, Market Road')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('offers the demo owner every quick action', async () => {
+    renderDemoApp(ROUTES.dashboard);
+    await screen.findByRole('heading', { name: 'Dashboard', level: 1 });
+
+    expect(screen.getByRole('link', { name: /add customer/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /add enquiry/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /create job/i })).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('shows no Firebase or emulator wording on the dashboard', async () => {
+    renderDemoApp(ROUTES.dashboard);
+    await screen.findByText('Recent updates');
+
+    expect(document.body.textContent).not.toMatch(/firebase/i);
+    expect(document.body.textContent).not.toMatch(/emulator/i);
+  });
+});

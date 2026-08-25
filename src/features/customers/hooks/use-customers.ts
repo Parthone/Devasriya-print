@@ -19,11 +19,19 @@ function describe(error: unknown, fallback: string): string {
   return error instanceof AppError ? error.message : fallback;
 }
 
-/** The whole directory, cached. Search and pagination run against this. */
-export function useCustomerDirectory(): UseQueryResult<CustomerDirectory, Error> {
+/**
+ * The whole directory, cached. Search and pagination run against this.
+ *
+ * `enabled` lets a caller hold the query back when the signed-in role has no
+ * right to read customers, so no denied request is ever sent.
+ */
+export function useCustomerDirectory(
+  options: { enabled?: boolean } = {},
+): UseQueryResult<CustomerDirectory, Error> {
   return useQuery({
     queryKey: CUSTOMERS_QUERY_KEY,
     queryFn: listCustomers,
+    enabled: options.enabled ?? true,
   });
 }
 

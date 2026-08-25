@@ -29,8 +29,14 @@ function describe(error: unknown, fallback: string): string {
   return error instanceof AppError ? error.message : fallback;
 }
 
-export function useJobDirectory(): UseQueryResult<JobDirectory, Error> {
-  return useQuery({ queryKey: JOBS_QUERY_KEY, queryFn: listJobs });
+export function useJobDirectory(
+  options: { enabled?: boolean } = {},
+): UseQueryResult<JobDirectory, Error> {
+  return useQuery({
+    queryKey: JOBS_QUERY_KEY,
+    queryFn: listJobs,
+    enabled: options.enabled ?? true,
+  });
 }
 
 export function useJob(id: Id | undefined): UseQueryResult<Job | null, Error> {

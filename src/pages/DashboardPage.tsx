@@ -1,130 +1,197 @@
-import { CheckCircle2, CircleDashed, CircleDot, XCircle } from 'lucide-react';
+import {
+  AlarmClock,
+  CalendarClock,
+  ClipboardList,
+  MessageSquareText,
+  PackageCheck,
+  Users,
+} from 'lucide-react';
+import { useMemo } from 'react';
 
 import { PageHeader } from '@/components/common/PageHeader';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { APP_CONFIG } from '@/config/app.config';
-import { parseFirebaseEnv, shouldUseEmulators } from '@/config/env';
-import { MODULE_STATUS_LABELS, MODULES, type ModuleStatus } from '@/constants/modules';
+import { Skeleton } from '@/components/ui/skeleton';
+import { parseFirebaseEnv } from '@/config/env';
+import { isDemoMode } from '@/config/demo';
+import { ROUTES } from '@/constants/routes';
+import { FirstRunPanel } from '@/features/dashboard/components/FirstRunPanel';
+import { KpiCard } from '@/features/dashboard/components/KpiCard';
+import { NeedsAttention } from '@/features/dashboard/components/NeedsAttention';
+import { QuickActions } from '@/features/dashboard/components/QuickActions';
+import { RecentUpdates } from '@/features/dashboard/components/RecentUpdates';
+import { RoadmapStatus } from '@/features/dashboard/components/RoadmapStatus';
+import { StatusBreakdown, type StatusRow } from '@/features/dashboard/components/StatusBreakdown';
+import { UpcomingDeliveries } from '@/features/dashboard/components/UpcomingDeliveries';
+import { useDashboardData } from '@/features/dashboard/hooks/use-dashboard-data';
+import { DUE_SOON_DAYS } from '@/features/dashboard/services/dashboard-metrics';
+import { ENQUIRY_STATUSES, ENQUIRY_STATUS_LABELS } from '@/features/enquiries/types';
+import { JOB_STATUSES, JOB_STATUS_LABELS } from '@/features/jobs/types';
 
-const STATUS_ICON: Record<ModuleStatus, typeof CheckCircle2> = {
-  done: CheckCircle2,
-  'in-progress': CircleDot,
-  planned: CircleDashed,
-};
+const UPCOMING_LIMIT = 8;
 
-const STATUS_VARIANT: Record<ModuleStatus, 'success' | 'warning' | 'outline'> = {
-  done: 'success',
-  'in-progress': 'warning',
-  planned: 'outline',
-};
+/** Warns only when the app genuinely cannot reach a backend, and never in demo. */
+function ConfigurationWarning() {
+  if (isDemoMode() || parseFirebaseEnv().ok) return null;
+
+  return (
+    <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+      This installation is not connected to a backend yet, so nothing can be saved. Ask your
+      administrator to finish the setup.
+    </p>
+  );
+}
 
 /**
- * Foundation dashboard. It reports the state of the environment only - business
- * metrics arrive with the reporting module, and nothing here is mocked.
+ * The operational overview.
+ *
+ * Everything here is derived from the customer, enquiry and job caches the
+ * directory screens already use, and every section is bounded by the same
+ * permissions as the screen it summarises.
  */
 export function DashboardPage() {
-  const firebaseEnv = parseFirebaseEnv();
-  const usingEmulators = shouldUseEmulators();
-  const delivered = MODULES.filter((module) => module.status === 'done').length;
+  const now = useMemo(() => new Date(), []);
+  const data = useDashboardData(now);
+
+  const enquiryRows: StatusRow[] = ENQUIRY_STATUSES.map((status) => ({
+    key: status,
+    label: ENQUIRY_STATUS_LABELS[status],
+    count: data.enquirySummary.byStatus[status],
+    to: ROUTES.enquiries,
+  }));
+
+  const jobRows: StatusRow[] = JOB_STATUSES.filter((status) => status !== 'cancelled').map(
+    (status) => ({
+      key: status,
+      label: JOB_STATUS_LABELS[status],
+      count: data.jobSummary.byStatus[status],
+      to: ROUTES.jobs,
+    }),
+  );
+
+  const followUpsDue =
+    data.enquirySummary.followUpsDueToday.length + data.enquirySummary.followUpsOverdue.length;
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        description={`${APP_CONFIG.tagline} - ${String(delivered)} of ${String(MODULES.length)} modules delivered.`}
+        description="What needs attention today."
+        actions={<QuickActions />}
       />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Environment</CardTitle>
-          <CardDescription>Live status of this build. No sample data is shown.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          <StatusRow
-            label="Firebase configuration"
-            ok={firebaseEnv.ok}
-            okText={`Project ${firebaseEnv.ok ? firebaseEnv.env.projectId : ''}`}
-            failText="Missing - copy .env.example to .env.local"
-          />
-          <StatusRow
-            label="Backend target"
-            ok
-            okText={usingEmulators ? 'Firebase Emulator Suite (local)' : 'Firebase cloud project'}
-            failText=""
-          />
-          <StatusRow
-            label="Locale and currency"
-            ok
-            okText={`${APP_CONFIG.locale} - ${APP_CONFIG.currency} (${APP_CONFIG.currencySymbol})`}
-            failText=""
-          />
-          <StatusRow label="Timezone" ok okText={APP_CONFIG.timeZone} failText="" />
-        </CardContent>
-      </Card>
+      <ConfigurationWarning />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Build roadmap</CardTitle>
-          <CardDescription>
-            Modules are implemented one at a time, each approved before work starts.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="divide-y">
-            {MODULES.map((module) => {
-              const Icon = STATUS_ICON[module.status];
-              return (
-                <li key={module.id} className="flex items-start gap-3 py-3">
-                  <Icon
-                    className={
-                      module.status === 'done'
-                        ? 'mt-0.5 size-4 shrink-0 text-success'
-                        : 'mt-0.5 size-4 shrink-0 text-muted-foreground'
-                    }
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-muted-foreground">
-                        Module {String(module.index)}
-                      </span>
-                      <span className="text-sm font-medium">{module.title}</span>
-                      <Badge variant={STATUS_VARIANT[module.status]} className="text-[10px]">
-                        {MODULE_STATUS_LABELS[module.status]}
-                      </Badge>
-                    </div>
-                    <p className="mt-0.5 text-sm text-muted-foreground">{module.description}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-interface StatusRowProps {
-  label: string;
-  ok: boolean;
-  okText: string;
-  failText: string;
-}
-
-function StatusRow({ label, ok, okText, failText }: StatusRowProps) {
-  return (
-    <div className="flex items-start gap-2 rounded-md border p-3">
-      {ok ? (
-        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" />
+      {data.isPending ? (
+        <div className="space-y-4" aria-busy="true">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+          <Skeleton className="h-64 w-full" />
+        </div>
+      ) : data.isError ? (
+        <p role="alert" className="text-sm text-destructive">
+          Could not load the dashboard. Check your connection and try again.
+        </p>
+      ) : data.isFirstRun ? (
+        <FirstRunPanel />
       ) : (
-        <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {data.canSeeCustomers ? (
+              <KpiCard
+                label="Customers"
+                value={data.customerSummary.total}
+                icon={Users}
+                to={ROUTES.customers}
+              />
+            ) : null}
+
+            {data.canSeeEnquiries ? (
+              <>
+                <KpiCard
+                  label="Open enquiries"
+                  value={data.enquirySummary.open}
+                  icon={MessageSquareText}
+                  to={ROUTES.enquiries}
+                />
+                <KpiCard
+                  label="Follow-ups due"
+                  value={followUpsDue}
+                  icon={AlarmClock}
+                  hint="Today or earlier"
+                  tone="warning"
+                  to={ROUTES.enquiries}
+                />
+              </>
+            ) : null}
+
+            {data.canSeeJobs ? (
+              <>
+                <KpiCard
+                  label="Active jobs"
+                  value={data.jobSummary.active}
+                  icon={ClipboardList}
+                  to={ROUTES.jobs}
+                />
+                <KpiCard
+                  label="Jobs due soon"
+                  value={data.jobSummary.dueSoon.length}
+                  icon={CalendarClock}
+                  hint={`Next ${String(DUE_SOON_DAYS)} days, overdue counted separately`}
+                  tone="warning"
+                  to={ROUTES.jobs}
+                />
+                <KpiCard
+                  label="Ready for pickup"
+                  value={data.jobSummary.ready}
+                  icon={PackageCheck}
+                  to={ROUTES.jobs}
+                />
+              </>
+            ) : null}
+          </div>
+
+          {data.canSeeEnquiries || data.canSeeJobs ? (
+            <NeedsAttention
+              enquiries={data.canSeeEnquiries ? data.enquirySummary : null}
+              jobs={data.canSeeJobs ? data.jobSummary : null}
+              now={now}
+            />
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {data.canSeeEnquiries ? (
+              <StatusBreakdown
+                title="Enquiry pipeline"
+                description="Where enquiries currently stand."
+                rows={enquiryRows}
+                emptyMessage="No enquiries recorded yet."
+              />
+            ) : null}
+
+            {data.canSeeJobs ? (
+              <StatusBreakdown
+                title="Job overview"
+                description="Work in hand, by status."
+                rows={jobRows}
+                emptyMessage="No jobs recorded yet."
+              />
+            ) : null}
+          </div>
+
+          {data.canSeeJobs ? (
+            <UpcomingDeliveries
+              jobs={data.jobSummary.upcomingDeliveries.slice(0, UPCOMING_LIMIT)}
+              now={now}
+            />
+          ) : null}
+
+          <RecentUpdates updates={data.recentUpdates} />
+        </>
       )}
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className="truncate text-sm text-muted-foreground">{ok ? okText : failText}</p>
-      </div>
-    </div>
+
+      <RoadmapStatus />
+    </>
   );
 }

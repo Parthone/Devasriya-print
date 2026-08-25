@@ -85,7 +85,8 @@ describe('application shell', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
-    expect(screen.getByText('Build roadmap')).toBeInTheDocument();
+    // The roadmap is now a quiet footer line rather than a card.
+    expect(await screen.findByText(/Modules delivered: \d+ of \d+/)).toBeInTheDocument();
   });
 
   it('redirects the root path to the dashboard', async () => {
