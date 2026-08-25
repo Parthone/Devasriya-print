@@ -4,6 +4,11 @@ import { ProtectedRoute } from '@/app/router/ProtectedRoute';
 import { NAV_SECTIONS, ROUTES } from '@/constants/routes';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { CustomerDetailPage } from '@/features/customers/pages/CustomerDetailPage';
+import { EnquiriesPage } from '@/features/enquiries/pages/EnquiriesPage';
+import { EnquiryDetailPage } from '@/features/enquiries/pages/EnquiryDetailPage';
+import { JobDetailPage } from '@/features/jobs/pages/JobDetailPage';
+import { JobsPage } from '@/features/jobs/pages/JobsPage';
+import { LocationsPage } from '@/features/locations/pages/LocationsPage';
 import { CustomersPage } from '@/features/customers/pages/CustomersPage';
 import { RolesPage } from '@/features/permissions/pages/RolesPage';
 import { UsersPage } from '@/features/users/pages/UsersPage';
@@ -68,6 +73,46 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['customers:view']}>
             <CustomerDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.enquiries,
+        element: (
+          <ProtectedRoute requires={['enquiries:view']}>
+            <EnquiriesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.enquiryDetail,
+        element: (
+          <ProtectedRoute requires={['enquiries:view']}>
+            <EnquiryDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.jobs,
+        element: (
+          <ProtectedRoute requires={['jobs:view']}>
+            <JobsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.jobDetail,
+        element: (
+          <ProtectedRoute requires={['jobs:view']}>
+            <JobDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.locations,
+        element: (
+          <ProtectedRoute requires={['settings:manage']}>
+            <LocationsPage />
           </ProtectedRoute>
         ),
       },

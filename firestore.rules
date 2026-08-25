@@ -10,6 +10,7 @@ rules_version = '2';
 //   users      (Module 1 - Authentication & Users)
 //   auditLogs  (Module 2 - Roles & Permissions)
 //   customers  (Module 3 - Customer Management)
+//   enquiries, jobs, locations, counters  (Module 4 - Enquiries & Jobs)
 //
 // Authorisation mirrors the application permission matrix in
 // src/features/permissions/matrix.ts. Hidden UI is never the control: every
@@ -45,14 +46,21 @@ service cloud.firestore {
       return {
         'owner': ['employees:view', 'employees:manage', 'employees:manage-admins',
                   'settings:view', 'settings:manage',
-                  'customers:view', 'customers:create', 'customers:edit'],
+                  'customers:view', 'customers:create', 'customers:edit',
+                  'enquiries:view', 'enquiries:create', 'enquiries:edit',
+                  'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign'],
         'admin': ['employees:view', 'employees:manage', 'settings:view',
-                  'customers:view', 'customers:create', 'customers:edit'],
-        'sales': ['customers:view', 'customers:create', 'customers:edit'],
-        'designer': ['customers:view'],
-        'production': ['employees:view', 'customers:view'],
-        'accounts': ['customers:view'],
-        'viewer': ['customers:view']
+                  'customers:view', 'customers:create', 'customers:edit',
+                  'enquiries:view', 'enquiries:create', 'enquiries:edit',
+                  'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign'],
+        'sales': ['customers:view', 'customers:create', 'customers:edit',
+                  'enquiries:view', 'enquiries:create', 'enquiries:edit',
+                  'jobs:view', 'jobs:create', 'jobs:edit'],
+        'designer': ['customers:view', 'enquiries:view', 'jobs:view'],
+        'production': ['employees:view', 'customers:view',
+                       'enquiries:view', 'jobs:view', 'jobs:edit'],
+        'accounts': ['customers:view', 'jobs:view'],
+        'viewer': ['customers:view', 'enquiries:view', 'jobs:view']
       };
     }
 
@@ -206,6 +214,173 @@ service cloud.firestore {
                     && request.resource.data.portalUserId == resource.data.portalUserId;
 
       // No role may delete a customer, from any client.
+      allow delete: if false;
+    }
+
+    // ---- Module 4: enquiries, jobs, pickup offices and number counters ----
+
+    function isPresentString(value) {
+      return value is string && value.size() > 0;
+    }
+
+    function nullableString(value) {
+      return value == null || value is string;
+    }
+
+    // Document numbers. Never listed, never reset, and only ever nudged up by
+    // one as part of creating the record that consumes the number.
+    match /counters/{counterId} {
+      function mayUseCounter() {
+        return (counterId.matches('^enquiries-[0-9]{4}$') && can('enquiries:create'))
+               || (counterId.matches('^jobs-[0-9]{4}$') && can('jobs:create'));
+      }
+
+      allow get: if mayUseCounter();
+      allow list: if false;
+      allow create: if mayUseCounter()
+                    && request.resource.data.keys().hasOnly(['value'])
+                    && request.resource.data.value == 1;
+      allow update: if mayUseCounter()
+                    && request.resource.data.keys().hasOnly(['value'])
+                    && request.resource.data.value is int
+                    && request.resource.data.value == resource.data.value + 1;
+      allow delete: if false;
+    }
+
+    // Pickup offices. Any active staff member may read them, because anyone
+    // creating a job has to choose one; only the owner may change them.
+    match /locations/{locationId} {
+      function isValidLocation(data) {
+        return data.keys().hasAll(['name', 'address', 'isActive', 'contactUserId',
+                                   'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.keys().hasOnly(['name', 'address', 'phone', 'contactUserId',
+                                       'contactName', 'contactMobile', 'isActive',
+                                       'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && isPresentString(data.name) && data.name.size() <= 120
+               && isPresentString(data.address) && data.address.size() <= 400
+               && data.isActive is bool
+               && nullableString(data.contactUserId)
+               && data.updatedBy is string;
+      }
+
+      allow get, list: if isActiveUser();
+      allow create: if can('settings:manage')
+                    && isValidLocation(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid;
+      allow update: if can('settings:manage')
+                    && resource != null
+                    && isValidLocation(request.resource.data)
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Enquiries. Never deleted: they become jobs, or a record of lost work.
+    match /enquiries/{enquiryId} {
+      function isValidEnquiry(data) {
+        return data.keys().hasAll(['enquiryNumber', 'customerId', 'customerName',
+                                   'customerMobile', 'enquiryDate', 'source',
+                                   'requirementText', 'status', 'followUps',
+                                   'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.keys().hasOnly(['enquiryNumber', 'customerId', 'customerName',
+                                       'customerMobile', 'enquiryDate', 'source',
+                                       'requirementText', 'requirementAudio', 'notes',
+                                       'assignedToId', 'assignedToName', 'nextFollowUpAt',
+                                       'followUps', 'status', 'lostReason',
+                                       'convertedJobId', 'convertedAt',
+                                       'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.enquiryNumber.matches('^ENQ-[0-9]{4}-[0-9]{4}$')
+               && isPresentString(data.customerId)
+               && data.customerMobile is string
+               && data.source in ['walk-in', 'phone', 'whatsapp', 'referral', 'repeat', 'other']
+               && data.status in ['new', 'contacted', 'follow-up', 'quotation-required',
+                                  'converted', 'lost', 'closed']
+               && data.requirementText is string && data.requirementText.size() <= 2000
+               && data.followUps is list && data.followUps.size() <= 50
+               && data.updatedBy is string;
+      }
+
+      allow get, list: if can('enquiries:view');
+
+      allow create: if can('enquiries:create')
+                    && isValidEnquiry(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.status != 'converted'
+                    && request.resource.data.convertedJobId == null;
+
+      allow update: if can('enquiries:edit')
+                    && resource != null
+                    && isValidEnquiry(request.resource.data)
+                    && request.resource.data.enquiryNumber == resource.data.enquiryNumber
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && (
+                         (request.resource.data.convertedJobId == resource.data.convertedJobId
+                          && request.resource.data.status != 'converted'
+                          && resource.data.convertedJobId == null)
+                         || (resource.data.convertedJobId == null
+                             && request.resource.data.convertedJobId is string
+                             && request.resource.data.status == 'converted'
+                             && can('jobs:create'))
+                         || (resource.data.convertedJobId != null
+                             && request.resource.data.convertedJobId == resource.data.convertedJobId
+                             && request.resource.data.status == 'converted')
+                       );
+
+      allow delete: if false;
+    }
+
+    // Jobs. Never deleted; cancelled instead, so numbers stay meaningful.
+    match /jobs/{jobId} {
+      function isValidJob(data) {
+        return data.keys().hasAll(['jobNumber', 'customerId', 'customerName', 'customerMobile',
+                                   'jobDate', 'title', 'requirementText', 'priority', 'status',
+                                   'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.keys().hasOnly(['jobNumber', 'customerId', 'customerName', 'customerMobile',
+                                       'enquiryId', 'enquiryNumber', 'jobDate', 'title',
+                                       'requirementText', 'requirementAudio', 'priority',
+                                       'expectedDeliveryDate', 'internalNotes',
+                                       'pickupLocationId', 'pickupLocationName',
+                                       'contactPersonId', 'contactPersonName',
+                                       'contactPersonMobile', 'assignedToId', 'assignedToName',
+                                       'status', 'createdAt', 'createdBy', 'updatedAt',
+                                       'updatedBy'])
+               && data.jobNumber.matches('^JOB-[0-9]{4}-[0-9]{4}$')
+               && isPresentString(data.customerId)
+               && isPresentString(data.title) && data.title.size() <= 160
+               && data.requirementText is string && data.requirementText.size() <= 2000
+               && data.priority in ['normal', 'urgent']
+               && data.status in ['open', 'in-progress', 'ready', 'delivered', 'on-hold',
+                                  'cancelled']
+               && nullableString(data.enquiryId)
+               && nullableString(data.pickupLocationId)
+               && nullableString(data.assignedToId)
+               && data.updatedBy is string;
+      }
+
+      allow get, list: if can('jobs:view');
+
+      allow create: if can('jobs:create')
+                    && isValidJob(request.resource.data)
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && request.resource.data.assignedToId == null;
+
+      allow update: if can('jobs:edit')
+                    && resource != null
+                    && isValidJob(request.resource.data)
+                    && request.resource.data.jobNumber == resource.data.jobNumber
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && request.resource.data.createdBy == resource.data.createdBy
+                    && request.resource.data.enquiryId == resource.data.enquiryId
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && (request.resource.data.assignedToId == resource.data.assignedToId
+                        || can('jobs:assign'));
+
       allow delete: if false;
     }
 

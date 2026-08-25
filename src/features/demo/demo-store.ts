@@ -2,10 +2,16 @@ import {
   DEMO_AUDIT_EVENTS,
   DEMO_CUSTOMERS,
   DEMO_EMPLOYEES,
+  DEMO_ENQUIRIES,
+  DEMO_JOBS,
+  DEMO_LOCATIONS,
   DEMO_OWNER_UID,
 } from '@/features/demo/demo-data';
 import type { AuditEvent } from '@/features/audit/types';
 import type { Customer, CustomerInput } from '@/features/customers/types';
+import type { Enquiry } from '@/features/enquiries/types';
+import type { Job } from '@/features/jobs/types';
+import type { Location, LocationInput } from '@/features/locations/types';
 import type { UserProfile } from '@/types/auth';
 import type { Id } from '@/types/common';
 
@@ -20,6 +26,8 @@ let customers: Customer[] = [...DEMO_CUSTOMERS];
 let employees: UserProfile[] = [...DEMO_EMPLOYEES];
 let auditEvents: AuditEvent[] = [...DEMO_AUDIT_EVENTS];
 let sequence = 0;
+/** Object URLs for recordings made during a demo. Never uploaded anywhere. */
+let audioUrls = new Map<string, string>();
 
 function nextId(prefix: string): Id {
   sequence += 1;
@@ -27,7 +35,19 @@ function nextId(prefix: string): Id {
 }
 
 /** Resets everything to the seed data. Used by tests. */
+export function rememberDemoAudio(attachmentId: string, url: string): void {
+  audioUrls.set(attachmentId, url);
+}
+
+export function demoAudioUrl(attachmentId: string): string | undefined {
+  return audioUrls.get(attachmentId);
+}
+
 export function resetDemoStore(): void {
+  audioUrls = new Map();
+  locations = [...DEMO_LOCATIONS];
+  enquiries = [...DEMO_ENQUIRIES];
+  jobs = [...DEMO_JOBS];
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
   auditEvents = [...DEMO_AUDIT_EVENTS];
@@ -124,3 +144,89 @@ export function recordDemoAuditEvent(event: Omit<AuditEvent, 'id'>): void {
 }
 
 export { DEMO_OWNER_UID };
+
+// ---------------------------------------------------------------------------
+// Module 4: locations, enquiries and jobs
+// ---------------------------------------------------------------------------
+
+let locations: Location[] = [...DEMO_LOCATIONS];
+let enquiries: Enquiry[] = [...DEMO_ENQUIRIES];
+let jobs: Job[] = [...DEMO_JOBS];
+
+export function demoLocations(): Location[] {
+  return [...locations].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function demoLocation(id: Id): Location | null {
+  return locations.find((location) => location.id === id) ?? null;
+}
+
+export function addDemoLocation(input: LocationInput, actorId: Id): Location {
+  const now = new Date();
+  const location: Location = {
+    ...input,
+    id: nextId('demo-location-new'),
+    contactUserId: null,
+    createdAt: now,
+    createdBy: actorId,
+    updatedAt: now,
+    updatedBy: actorId,
+  };
+  locations = [...locations, location];
+  return location;
+}
+
+export function updateDemoLocation(id: Id, input: LocationInput, actorId: Id): void {
+  locations = locations.map((location) =>
+    location.id === id
+      ? { ...location, ...input, updatedAt: new Date(), updatedBy: actorId }
+      : location,
+  );
+}
+
+export function demoEnquiries(): Enquiry[] {
+  return [...enquiries].sort((a, b) => b.enquiryDate.getTime() - a.enquiryDate.getTime());
+}
+
+export function demoEnquiry(id: Id): Enquiry | null {
+  return enquiries.find((enquiry) => enquiry.id === id) ?? null;
+}
+
+export function addDemoEnquiry(enquiry: Omit<Enquiry, 'id'>): Enquiry {
+  const created: Enquiry = { ...enquiry, id: nextId('demo-enquiry-new') };
+  enquiries = [...enquiries, created];
+  return created;
+}
+
+export function updateDemoEnquiry(id: Id, changes: Partial<Enquiry>): void {
+  enquiries = enquiries.map((enquiry) =>
+    enquiry.id === id ? { ...enquiry, ...changes, updatedAt: new Date() } : enquiry,
+  );
+}
+
+export function demoJobs(): Job[] {
+  return [...jobs].sort((a, b) => b.jobDate.getTime() - a.jobDate.getTime());
+}
+
+export function demoJob(id: Id): Job | null {
+  return jobs.find((job) => job.id === id) ?? null;
+}
+
+export function addDemoJob(job: Omit<Job, 'id'>): Job {
+  const created: Job = { ...job, id: nextId('demo-job-new') };
+  jobs = [...jobs, created];
+  return created;
+}
+
+export function updateDemoJob(id: Id, changes: Partial<Job>): void {
+  jobs = jobs.map((job) => (job.id === id ? { ...job, ...changes, updatedAt: new Date() } : job));
+}
+
+/** Next demo document number for a scope, mimicking the real counters. */
+export function nextDemoNumber(prefix: string, yearKey: string, existing: string[]): string {
+  const used = existing
+    .map((value) => Number(value.split('-').at(-1) ?? '0'))
+    .filter((value) => Number.isFinite(value));
+  const next = (used.length > 0 ? Math.max(...used) : 0) + 1;
+  return `${prefix}-${yearKey}-${String(next).padStart(4, '0')}`;
+}

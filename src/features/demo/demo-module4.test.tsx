@@ -1,0 +1,241 @@
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useRoutes } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AppProviders } from '@/app/providers/AppProviders';
+import { routes } from '@/app/router/routes';
+import { ROUTES } from '@/constants/routes';
+import { demoEnquiry, resetDemoStore } from '@/features/demo/demo-store';
+
+/**
+ * Enquiries and jobs in demo mode.
+ *
+ * Every Firebase entry point is a spy that must never be called - that is the
+ * promise the GitHub demo makes.
+ */
+const firebase = vi.hoisted(() => ({
+  observeAuthState: vi.fn(),
+  signInWithEmail: vi.fn(),
+  getFirebaseAuth: vi.fn(),
+  getDb: vi.fn(),
+  getFirebaseStorage: vi.fn(),
+}));
+
+vi.mock('@/features/auth/services/auth.service', () => ({
+  ensurePersistence: vi.fn(),
+  observeAuthState: firebase.observeAuthState,
+  signInWithEmail: firebase.signInWithEmail,
+  signOutCurrentUser: vi.fn(),
+  sendPasswordSetupEmail: vi.fn(),
+  getCurrentIdToken: vi.fn(),
+}));
+
+vi.mock('@/lib/firebase/client', () => ({
+  getFirebaseApp: vi.fn(() => {
+    throw new Error('Firebase must not be initialised in demo mode');
+  }),
+  getFirebaseAuth: firebase.getFirebaseAuth,
+  getDb: firebase.getDb,
+  getFirebaseStorage: firebase.getFirebaseStorage,
+  resetFirebaseForTests: vi.fn(),
+}));
+
+function RoutesRenderer() {
+  return useRoutes(routes);
+}
+
+function renderDemoApp(path: string) {
+  return render(
+    <AppProviders>
+      <MemoryRouter initialEntries={[path]}>
+        <RoutesRenderer />
+      </MemoryRouter>
+    </AppProviders>,
+  );
+}
+
+function expectNoFirebaseCalls() {
+  expect(firebase.observeAuthState).not.toHaveBeenCalled();
+  expect(firebase.getDb).not.toHaveBeenCalled();
+  expect(firebase.getFirebaseStorage).not.toHaveBeenCalled();
+}
+
+beforeEach(() => {
+  vi.stubEnv('VITE_DEMO_MODE', 'true');
+  vi.clearAllMocks();
+  resetDemoStore();
+  sessionStorage.setItem('devasriya-print.demo-session', 'active');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  sessionStorage.clear();
+});
+
+describe('demo enquiries', () => {
+  it('lists the sample enquiries', async () => {
+    renderDemoApp(ROUTES.enquiries);
+
+    expect(await screen.findByRole('heading', { name: 'Enquiries', level: 1 })).toBeInTheDocument();
+    const table = within(await screen.findByRole('table'));
+    expect(table.getByRole('link', { name: 'ENQ-2627-0001' })).toBeInTheDocument();
+    expect(table.getByText('Ravi Kumar')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('finds an enquiry by the customer mobile number', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderDemoApp(ROUTES.enquiries);
+
+    await screen.findByRole('table');
+    await user.type(await screen.findByLabelText('Search enquiries'), '9950400055');
+
+    const table = within(screen.getByRole('table'));
+    expect(table.getByRole('link', { name: 'ENQ-2627-0003' })).toBeInTheDocument();
+    expect(table.queryByRole('link', { name: 'ENQ-2627-0001' })).not.toBeInTheDocument();
+  });
+
+  it('shows an enquiry with its follow-up history', async () => {
+    renderDemoApp('/enquiries/demo-enquiry-1');
+
+    expect(
+      await screen.findByRole('heading', { name: 'ENQ-2627-0001', level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Wedding cards, 250 pieces/)).toBeInTheDocument();
+    expect(screen.getByText(/shared two paper options/i)).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('records a follow-up in memory', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderDemoApp('/enquiries/demo-enquiry-1');
+
+    await screen.findByRole('heading', { name: 'ENQ-2627-0001', level: 1 });
+    await user.click(screen.getByRole('button', { name: /follow-up/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText(/what happened/i),
+      'Customer confirmed the design',
+    );
+    await user.click(within(dialog).getByRole('button', { name: /save follow-up/i }));
+
+    await waitFor(() => {
+      expect(demoEnquiry('demo-enquiry-1')?.followUps.length).toBe(2);
+    });
+    expect(demoEnquiry('demo-enquiry-1')?.followUps[0]?.note).toBe('Customer confirmed the design');
+    expectNoFirebaseCalls();
+  });
+});
+
+describe('demo jobs', () => {
+  it('lists the sample jobs with their pickup office', async () => {
+    renderDemoApp(ROUTES.jobs);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Jobs & Orders', level: 1 }),
+    ).toBeInTheDocument();
+    const table = within(await screen.findByRole('table'));
+    expect(table.getByRole('link', { name: 'JOB-2627-0001' })).toBeInTheDocument();
+    expect(table.getByText('City Branch, Market Road')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('shows a job with its collection details and its enquiry', async () => {
+    renderDemoApp('/jobs/demo-job-1');
+
+    expect(
+      await screen.findByRole('heading', { name: 'JOB-2627-0001', level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('City Branch, Market Road')).toBeInTheDocument();
+    expect(screen.getByText('Sunil Yadav')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'ENQ-2627-0002' })).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('shows a direct job as having no enquiry', async () => {
+    renderDemoApp('/jobs/demo-job-2');
+
+    expect(
+      await screen.findByRole('heading', { name: 'JOB-2627-0002', level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Direct job, no enquiry')).toBeInTheDocument();
+  });
+});
+
+describe('demo conversion', () => {
+  it('converts an enquiry into a job and lands on the job', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderDemoApp('/enquiries/demo-enquiry-3');
+
+    await screen.findByRole('heading', { name: 'ENQ-2627-0003', level: 1 });
+    await user.click(screen.getByRole('button', { name: /convert to job/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    const title = within(dialog).getByLabelText(/job title/i);
+    await user.clear(title);
+    await user.type(title, 'Admission season posters');
+    await user.click(within(dialog).getByRole('button', { name: /create job/i }));
+
+    expect(await screen.findByRole('heading', { level: 1, name: /^JOB-/ })).toBeInTheDocument();
+
+    const converted = demoEnquiry('demo-enquiry-3');
+    expect(converted?.status).toBe('converted');
+    expect(converted?.convertedJobId).toBeTruthy();
+    expectNoFirebaseCalls();
+  });
+
+  it('offers a link to the job instead of converting twice', async () => {
+    renderDemoApp('/enquiries/demo-enquiry-2');
+
+    await screen.findByRole('heading', { name: 'ENQ-2627-0002', level: 1 });
+    expect(screen.getByRole('link', { name: /view job/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /convert to job/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('demo pickup offices', () => {
+  it('lists the sample offices for the owner', async () => {
+    renderDemoApp(ROUTES.locations);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pickup offices', level: 1 }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('Main Press, Station Road')).toBeInTheDocument();
+    expect(screen.getByText('City Branch, Market Road')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+
+  it('adds an office in memory', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderDemoApp(ROUTES.locations);
+
+    await screen.findByRole('heading', { name: 'Pickup offices', level: 1 });
+    await user.click(screen.getByRole('button', { name: /add office/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText(/office name/i), 'North Branch');
+    await user.type(within(dialog).getByLabelText(/address/i), '5 Ring Road, Jaipur');
+    await user.type(within(dialog).getByLabelText(/contact person/i), 'Demo Contact');
+    await user.click(within(dialog).getByRole('button', { name: /add office/i }));
+
+    expect(await screen.findByText('North Branch')).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+});
+
+describe('demo session survives navigation', () => {
+  it('keeps working after a reload on a job page', async () => {
+    renderDemoApp('/jobs/demo-job-1');
+    await screen.findByRole('heading', { name: 'JOB-2627-0001', level: 1 });
+
+    cleanup();
+    renderDemoApp('/jobs/demo-job-1');
+
+    expect(
+      await screen.findByRole('heading', { name: 'JOB-2627-0001', level: 1 }),
+    ).toBeInTheDocument();
+    expectNoFirebaseCalls();
+  });
+});

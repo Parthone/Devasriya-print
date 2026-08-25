@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Building2,
   ShieldCheck,
   Boxes,
   CalendarClock,
@@ -25,7 +26,9 @@ export const ROUTES = {
   customers: '/customers',
   customerDetail: '/customers/:customerId',
   enquiries: '/enquiries',
+  enquiryDetail: '/enquiries/:enquiryId',
   jobs: '/jobs',
+  jobDetail: '/jobs/:jobId',
   measurements: '/measurements',
   estimates: '/estimates',
   designs: '/designs',
@@ -36,6 +39,7 @@ export const ROUTES = {
   reports: '/reports',
   settings: '/settings',
   users: '/settings/users',
+  locations: '/settings/locations',
   roles: '/settings/roles',
   forbidden: '/forbidden',
 } as const;
@@ -96,14 +100,14 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Enquiries',
         path: ROUTES.enquiries,
         icon: MessageSquareText,
-        enabled: false,
+        enabled: true,
         permission: 'enquiries:view',
       },
       {
         label: 'Jobs & Orders',
         path: ROUTES.jobs,
         icon: ClipboardList,
-        enabled: false,
+        enabled: true,
         permission: 'jobs:view',
       },
       {
@@ -171,6 +175,13 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: UserCog,
         enabled: true,
         permission: 'employees:view',
+      },
+      {
+        label: 'Pickup Offices',
+        path: ROUTES.locations,
+        icon: Building2,
+        enabled: true,
+        permission: 'settings:manage',
       },
       {
         label: 'Roles & Permissions',

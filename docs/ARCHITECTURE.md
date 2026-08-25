@@ -71,8 +71,14 @@ server-side authority - that migration must stay a service-layer change.
   floating point rupees. Display with `formatMoney` from `src/lib/format.ts`.
 - Phone numbers are ten digits without the country code
   (`src/lib/phone.ts`); normalise on the way in, format on the way out.
-- A record that other modules will link to (customers, and later jobs and
-  invoices) is archived, never deleted.
+- A record that other modules will link to (customers, enquiries, jobs) is
+  archived or closed, never deleted.
+- Human-readable document numbers come from `src/services/base/counters.ts`,
+  allocated inside the transaction that creates the record.
+- Snapshots (customer name on an enquiry, pickup office on a job) exist for
+  history and search. The id stays the authoritative relationship.
+- Files live at immutable paths under an attachment id, and no Storage download
+  URL is ever persisted - resolve one at play time through the storage service.
 - Dates are displayed in `Asia/Kolkata` via `src/lib/format.ts`. Do not call
   `toLocaleDateString` directly in components.
 

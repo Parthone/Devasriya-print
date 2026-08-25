@@ -87,14 +87,16 @@ export const MODULES: ModuleDefinition[] = [
     index: 4,
     id: 'enquiries',
     title: 'Enquiries & Jobs',
-    description: 'Enquiry intake and conversion into jobs and orders.',
-    status: 'planned',
+    description:
+      'Enquiry intake with voice requirements, follow-ups, and conversion into jobs and orders.',
+    status: 'done',
     route: ROUTES.enquiries,
     scope: [
-      'Enquiry capture and follow-up',
-      'Conversion to a job with a job number',
-      'Job status lifecycle',
-      'Linked customer, estimate and production records',
+      'Enquiry directory with numbered enquiries and follow-ups',
+      'Typed and voice requirements recorded in the browser',
+      'Atomic conversion to a job with its own number',
+      'Direct jobs for walk-in repeat orders',
+      'Pickup office and contact person on every job',
     ],
   },
   {

@@ -22,8 +22,8 @@
     "emulators": "firebase emulators:start --project demo-devasriya",
     "seed:emulator": "node scripts/seed-emulator.mjs",
     "bootstrap:owner": "node scripts/bootstrap-owner.mjs",
-    "test:rules": "firebase emulators:exec --project demo-devasriya --only firestore \"vitest run --config vitest.rules.config.ts\"",
-    "test:emulator": "firebase emulators:exec --project demo-devasriya --only auth,firestore \"vitest run --config vitest.emulator.config.ts\"",
+    "test:rules": "firebase emulators:exec --project demo-devasriya --only firestore,storage \"vitest run --config vitest.rules.config.ts\"",
+    "test:emulator": "firebase emulators:exec --project demo-devasriya --only auth,firestore,storage \"vitest run --config vitest.emulator.config.ts\"",
     "verify": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build"
   },
   "dependencies": {

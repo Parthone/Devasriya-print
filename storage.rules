@@ -3,13 +3,77 @@ rules_version = '2';
 // ---------------------------------------------------------------------------
 // Devasriya Print - Cloud Storage security rules
 //
-// MODULE 0 BASELINE: deny everything.
+// Everything is denied except requirement audio, which Module 4 introduced.
+// Permissions mirror the application matrix in
+// src/features/permissions/matrix.ts, resolved from the caller's employee
+// profile in Firestore exactly as the Firestore rules do.
 //
-// Design files, artwork proofs and job attachments get their own rules when
-// the design upload / approval module is implemented.
+// Paths are immutable: a recording is written once, under an attachment id, and
+// replaced by writing a new file rather than overwriting an old one. That is
+// what lets a job keep the exact recording it was converted with.
 // ---------------------------------------------------------------------------
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function profile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isActiveUser() {
+      return request.auth != null
+             && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+             && profile().isActive == true;
+    }
+
+    function rolePermissions() {
+      return {
+        'owner': ['enquiries:view', 'enquiries:create', 'enquiries:edit',
+                  'jobs:view', 'jobs:create', 'jobs:edit'],
+        'admin': ['enquiries:view', 'enquiries:create', 'enquiries:edit',
+                  'jobs:view', 'jobs:create', 'jobs:edit'],
+        'sales': ['enquiries:view', 'enquiries:create', 'enquiries:edit',
+                  'jobs:view', 'jobs:create', 'jobs:edit'],
+        'designer': ['enquiries:view', 'jobs:view'],
+        'production': ['enquiries:view', 'jobs:view', 'jobs:edit'],
+        'accounts': ['jobs:view'],
+        'viewer': ['enquiries:view', 'jobs:view']
+      };
+    }
+
+    function can(permission) {
+      return isActiveUser() && permission in rolePermissions()[profile().role];
+    }
+
+    // Audio limits, matching src/types/attachments.ts.
+    function isAllowedAudio() {
+      return request.resource.size <= 5 * 1024 * 1024
+             && request.resource.contentType.matches('audio/.*');
+    }
+
+    // Requirement recorded against an enquiry. Strictly enquiry permissions:
+    // converting to a job copies the bytes to a job-owned path instead of
+    // sharing this one, so seeing jobs never grants sight of enquiries.
+    match /enquiries/{enquiryId}/requirement/{fileName} {
+      allow read: if can('enquiries:view');
+      // Immutable: a path is written once. Replacing a recording writes a new
+      // attachment id, so `resource == null` is what makes an upload a first
+      // write rather than an overwrite of somebody else's recording.
+      allow create, update: if resource == null
+                            && (can('enquiries:create') || can('enquiries:edit'))
+                            && isAllowedAudio();
+      allow delete: if can('enquiries:edit');
+    }
+
+    // Requirement held by a job: recorded directly, or copied from the enquiry
+    // at the moment of conversion.
+    match /jobs/{jobId}/requirement/{fileName} {
+      allow read: if can('jobs:view');
+      allow create, update: if resource == null
+                            && (can('jobs:create') || can('jobs:edit'))
+                            && isAllowedAudio();
+      allow delete: if can('jobs:edit');
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

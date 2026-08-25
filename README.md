@@ -8,9 +8,10 @@ Built as a real commercial application - React + TypeScript on the front end,
 Firebase (Authentication, Cloud Firestore, Cloud Storage, Hosting) on the back
 end, with an architecture that can move to Google Cloud services later.
 
-> **Status: Modules 0-3 complete** - project foundation, authentication and
-> employee accounts, role-based permissions with an audit trail, and customer
-> management. See [docs/MODULES.md](docs/MODULES.md) for the roadmap.
+> **Status: Modules 0-4 complete** - foundation, authentication and employee
+> accounts, role-based permissions with an audit trail, customer management,
+> and enquiries with conversion to jobs. See [docs/MODULES.md](docs/MODULES.md)
+> for the roadmap.
 
 ---
 
@@ -293,6 +294,74 @@ Demo mode lives in `src/config/demo.ts` and `src/features/demo/`. Removing it
 later means deleting that folder, the `isDemoMode()` branches in the services,
 and the provider switch in `AppProviders`.
 
+## Enquiries and jobs
+
+The flow is: customer, enquiry, follow-ups, then conversion into a job that
+later modules price, design, produce and invoice.
+
+### Numbers
+
+Enquiries and jobs get a human-readable number per Indian financial year, from a
+transactional counter: `ENQ-2627-0001`, `JOB-2627-0001`. The sequence restarts
+each April. Counters are never shown in the UI, cannot be listed, and the
+security rules only accept an increase of exactly one from somebody who may
+create that kind of record.
+
+### Requirements, typed and spoken
+
+Every enquiry has a typed requirement, and optionally a voice recording made in
+the browser with `MediaRecorder` (Opus in WebM, MP4/AAC on Safari). Recordings
+are capped at 3 minutes and 5 MB, can be played back before saving, and can be
+replaced or removed. A direct job can carry its own recording too.
+
+Two rules protect the trail:
+
+- **No download URL is ever stored.** Only the storage path and metadata are on
+  the document; the playable URL is resolved at play time for the signed-in
+  user. A stored URL would outlive the permission check that produced it.
+- **Recording paths are immutable.** Replacing a recording uploads a new file
+  under a new attachment id; the document is updated only after that upload
+  succeeds. A job converted from an enquiry therefore keeps playing the exact
+  recording that existed at conversion time, and a superseded file is only
+  deleted when nothing else can still reference it.
+
+Storage holds nothing else: `storage.rules` allows requirement audio under
+`enquiries/{id}/requirement/...` and `jobs/{id}/requirement/...` and denies
+everything else. The two are kept strictly apart: reading enquiry audio needs
+`enquiries:view`, reading job audio needs `jobs:view`. Converting an enquiry
+**copies the bytes** to a job-owned path rather than sharing the enquiry file,
+so a role such as accounts - which sees jobs but not enquiries - can play the
+job recording without gaining any access to enquiry storage.
+
+### Conversion
+
+Converting an enquiry copies the requirement recording to a job-owned path,
+then writes the job, allocates its number and stamps the enquiry as converted in
+**one Firestore transaction**. The copy happens first, so a failed upload means
+nothing was written at all; if the transaction then fails, the orphaned copy is
+discarded. The enquiry recording is never modified or deleted, and replacing it
+later cannot change what the job plays. Either all of it lands or
+none of it does, so an enquiry can never be marked converted without the job it
+names. A second conversion is refused, including from a stale copy of the
+enquiry left open in another tab. The edit form cannot set the converted status
+by hand - the service refuses it and so do the rules.
+
+### Pickup offices
+
+Owner-managed under **Settings, Pickup offices**. Each office has an address and
+one contact person, so a customer always has somebody to ask about status,
+payment or a design problem. Choosing an office on a job snapshots the office
+name, contact name and contact number onto the job, so later edits to the office
+never rewrite past jobs. Any active staff member can read the office list,
+because anyone creating a job has to choose one.
+
+### Who can do what
+
+Exactly the Module 2 matrix, unchanged. Sales creates and edits enquiries and
+jobs; production edits jobs; accounts sees jobs but not enquiries; only owner and
+admin assign work. Assignment controls only appear for roles that already hold
+the matching permission, so nobody needed extra access to the staff directory.
+
 ## Project structure
 
 ```
@@ -307,6 +376,9 @@ src/
     audit/      Append-only trail of sensitive changes (Module 2)
     auth/       Sign-in, session, route guard plumbing (Module 1)
     customers/  Customer directory, detail and archiving (Module 3)
+    enquiries/  Enquiry intake, follow-ups, voice requirements (Module 4)
+    jobs/       Jobs, conversion from enquiries, assignment (Module 4)
+    locations/  Pickup offices and their contact people (Module 4)
     demo/       Temporary demo-mode session and sample data
     permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)

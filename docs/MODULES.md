@@ -214,6 +214,67 @@ outstanding balances (billing).
 attach an auth account by writing one field. The UI never exposes it and the
 rules forbid ordinary edits from changing it.
 
-## Next: Module 4 - Enquiries & Jobs
+## Module 4 - Enquiries & Jobs (delivered)
+
+**Enquiries** (`/enquiries`, `enquiries:view`)
+
+- Numbered per financial year from a transactional counter: `ENQ-2627-0001`
+- Linked to a customer, with name and mobile snapshots for list and search
+- Typed requirement plus an optional browser voice recording
+- Inline follow-up history (capped at 50) and a top-level `nextFollowUpAt` for
+  the future deadline module
+- Statuses: new, contacted, follow-up, quotation required, converted, lost
+  (with a reason), closed. `converted` is only ever set by conversion
+
+**Jobs** (`/jobs`, `jobs:view`)
+
+- Numbered `JOB-2627-0001`, stable forever, from its own counter
+- Created by converting an enquiry, or directly for a walk-in repeat order
+- Carries the requirement, the exact recording, priority, expected delivery,
+  pickup office snapshot and coarse status
+- Assignment is a separate action behind `jobs:assign`
+
+**Conversion**
+
+- One Firestore transaction: allocate the job number, write the job, stamp the
+  enquiry as converted with its job id
+- Duplicate conversion refused in the service, in the transaction and in the
+  rules, including from a stale copy of the enquiry
+- A failed conversion leaves no job and no converted flag
+
+**Voice requirements**
+
+- `MediaRecorder`, Opus/WebM with an MP4 fallback, 3 minutes and 5 MB caps
+- Playback before saving, replace and remove
+- Metadata only on the document - no download URL is ever persisted
+- Immutable, write-once paths: replacing a recording writes a new attachment id
+- Conversion copies the bytes to a job-owned path, so enquiry audio stays behind
+  `enquiries:view` and job audio behind `jobs:view`; the copy is taken at the
+  moment of conversion and never changes afterwards
+- A copy whose conversion then fails is discarded; the enquiry recording is
+  never modified or deleted by the job side
+- Superseded files are deleted only when nothing else references them
+
+**Pickup offices** (`/settings/locations`, `settings:manage`)
+
+- Owner-managed offices with one contact person each
+- Jobs snapshot office name, contact name and contact mobile
+
+**Security**
+
+- `enquiries`, `jobs`, `locations` and `counters` collections opened, with field
+  validation and immutable numbers and creation audit fields
+- `storage.rules` opened for the first time, for requirement audio only, with
+  size and content-type limits and write-once paths
+- Counters accept only a plus-one increment from a permitted creator, cannot be
+  listed, reset or deleted
+- No deletes anywhere in this module
+
+**Deliberately excluded**
+
+Measurements and pricing (Module 5), quotations (6), design approval (7),
+production stages (8), advanced assignment (9), billing (11).
+
+## Next: Module 5 - Measurements & Price Calculation
 
 Scope to be confirmed before implementation.
