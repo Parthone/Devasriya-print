@@ -19,7 +19,7 @@ interface CanProps {
  * Renders children only when the signed-in user holds the permission.
  *
  * This hides UI; it does not secure anything on its own. Every gated action
- * must also be enforced by a route guard and by firestore.rules.
+ * must also be enforced by a route guard and by a row level security policy.
  */
 export function Can({ permission, all, any, fallback = null, children }: CanProps) {
   const { can, canAll, canAny } = usePermissions();

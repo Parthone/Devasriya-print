@@ -17,7 +17,7 @@ import { AppError } from '@/types/common';
 /**
  * Conversion behaviour, exercised through the in-memory demo backend.
  *
- * The same code path runs against Firestore in a transaction; the emulator
+ * The same code path runs against PostgreSQL in a transaction; the integration
  * suite covers that side, including two people converting at once.
  */
 const NOW = new Date('2026-08-24T10:00:00.000Z');
@@ -25,7 +25,7 @@ const ACTOR = { uid: 'uid-sales', name: 'Anita Verma' };
 
 const AUDIO: AudioAttachment = {
   id: 'attachment-1',
-  storagePath: 'enquiries/e1/requirement/attachment-1.webm',
+  storagePath: 'e1/attachment-1.webm',
   mimeType: 'audio/webm;codecs=opus',
   durationSeconds: 42,
   sizeBytes: 12345,
@@ -122,7 +122,10 @@ describe('converting an enquiry to a job', () => {
     // A copy of its own, so playing it only needs jobs:view.
     expect(copy?.id).not.toBe(AUDIO.id);
     expect(copy?.storagePath).not.toBe(AUDIO.storagePath);
-    expect(copy?.storagePath.startsWith('jobs/')).toBe(true);
+    // The copy sits under the new job's id, in the job bucket. Enquiry audio
+    // and job audio are separate buckets, which is what stops sight of a job
+    // granting sight of the enquiry it came from.
+    expect(copy?.storagePath.startsWith(`${job.id}/`)).toBe(true);
     // Same recording: format, length, size, when it was made and by whom.
     expect(copy?.mimeType).toBe(AUDIO.mimeType);
     expect(copy?.durationSeconds).toBe(AUDIO.durationSeconds);
@@ -164,7 +167,7 @@ describe('converting an enquiry to a job', () => {
     const replacement: AudioAttachment = {
       ...AUDIO,
       id: 'attachment-2',
-      storagePath: 'enquiries/e1/requirement/attachment-2.webm',
+      storagePath: 'e1/attachment-2.webm',
       durationSeconds: 90,
     };
     updateDemoEnquiry(enquiry.id, { requirementAudio: replacement });

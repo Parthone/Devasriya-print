@@ -33,6 +33,7 @@ function fakeProvisioner(overrides: Partial<UserAccountProvisioner> = {}): UserA
     name: 'fake',
     canManageAccountState: false,
     createAccount: vi.fn().mockResolvedValue({ uid: 'new-uid' }),
+    createCustomerAccount: vi.fn().mockResolvedValue({ uid: 'new-portal-uid' }),
     sendPasswordSetupEmail: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };

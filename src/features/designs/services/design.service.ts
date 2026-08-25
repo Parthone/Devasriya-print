@@ -1,5 +1,3 @@
-import { doc, serverTimestamp, writeBatch } from 'firebase/firestore';
-
 import { isDemoMode } from '@/config/demo';
 import type { Language } from '@/constants/india';
 import {
@@ -11,20 +9,20 @@ import {
 } from '@/features/demo/demo-store';
 import {
   canTransition,
-  designIdFor,
   isSupersededByNewVersion,
   nextVersionNumber,
-  parseDesign,
   type DecisionOutcome,
   type DecisionSource,
   type Design,
   type DesignStatus,
 } from '@/features/designs/types';
+import { DESIGN_COLUMNS, toDesign, type DesignRow } from '@/features/designs/services/design.rows';
 import type { Job } from '@/features/jobs/types';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { COLLECTIONS } from '@/services/base/collections';
-import { FirestoreRepository, orderBy, where } from '@/services/base/repository';
+import { newId } from '@/lib/ids';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap, unwrapMaybe } from '@/lib/supabase/errors';
+import { fromDate } from '@/lib/supabase/rows';
+import { TABLES } from '@/services/base/tables';
 import {
   discardDesignFile,
   measurePreview,
@@ -32,8 +30,6 @@ import {
 } from '@/services/storage/design-storage.service';
 import type { DesignMimeType } from '@/types/attachments';
 import { AppError, type Id } from '@/types/common';
-
-export const designRepository = new FirestoreRepository<Design>(COLLECTIONS.designs, parseDesign);
 
 export const DESIGN_FETCH_CAP = 500;
 
@@ -49,46 +45,74 @@ export async function listDesigns(): Promise<DesignDirectory> {
     return { designs: demoDesigns(), capReached: false, cap: DESIGN_FETCH_CAP };
   }
 
-  const page = await designRepository.list({
-    constraints: [orderBy('uploadedAt', 'desc')],
-    pageSize: DESIGN_FETCH_CAP,
-  });
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.designs)
+      .select(DESIGN_COLUMNS)
+      .order('uploaded_at', { ascending: false })
+      .limit(DESIGN_FETCH_CAP + 1)
+      .returns<DesignRow[]>(),
+  );
 
-  return { designs: page.items, capReached: page.hasMore, cap: DESIGN_FETCH_CAP };
+  const capReached = rows.length > DESIGN_FETCH_CAP;
+  return {
+    designs: rows.slice(0, DESIGN_FETCH_CAP).map(toDesign),
+    capReached,
+    cap: DESIGN_FETCH_CAP,
+  };
 }
 
 /**
  * The versions one customer may see.
  *
  * The query filters on the customer id because that is exactly the condition
- * the security rules check: a portal user asking for anything wider is refused
- * by the database, not merely by this function.
+ * the security policy applies: a portal user asking for anything wider gets
+ * nothing back, because the database filters it out, not because this function
+ * chose to.
  */
 export async function listDesignsForCustomer(customerId: Id): Promise<Design[]> {
   if (isDemoMode()) {
     return demoDesigns().filter((design) => design.customerId === customerId);
   }
 
-  const page = await designRepository.list({
-    constraints: [where('customerId', '==', customerId), orderBy('uploadedAt', 'desc')],
-    pageSize: DESIGN_FETCH_CAP,
-  });
-  return page.items;
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.designs)
+      .select(DESIGN_COLUMNS)
+      .eq('customer_id', customerId)
+      .order('uploaded_at', { ascending: false })
+      .limit(DESIGN_FETCH_CAP)
+      .returns<DesignRow[]>(),
+  );
+  return rows.map(toDesign);
 }
 
 export async function listDesignsForJob(jobId: Id): Promise<Design[]> {
   if (isDemoMode()) return demoDesignsForJob(jobId);
 
-  const page = await designRepository.list({
-    constraints: [where('jobId', '==', jobId), orderBy('version', 'desc')],
-    pageSize: DESIGN_FETCH_CAP,
-  });
-  return page.items;
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.designs)
+      .select(DESIGN_COLUMNS)
+      .eq('job_id', jobId)
+      .order('version', { ascending: false })
+      .limit(DESIGN_FETCH_CAP)
+      .returns<DesignRow[]>(),
+  );
+  return rows.map(toDesign);
 }
 
 export async function findDesign(id: Id): Promise<Design | null> {
   if (isDemoMode()) return demoDesign(id);
-  return designRepository.findById(id);
+
+  const row = unwrapMaybe(
+    await getSupabase()
+      .from(TABLES.designs)
+      .select(DESIGN_COLUMNS)
+      .eq('id', id)
+      .maybeSingle<DesignRow>(),
+  );
+  return row ? toDesign(row) : null;
 }
 
 export interface ActorSnapshot {
@@ -113,14 +137,15 @@ export interface UploadDesignInput {
  * Adds a new version to a job.
  *
  * Nothing existing is rewritten. The file goes to a path of its own, the
- * version gets its own document, and the versions it replaces are marked
- * superseded in the same batch - so the moment the revision exists, exactly one
+ * version gets its own row, and the versions it replaces are marked superseded
+ * in the same transaction - so the moment the revision exists, exactly one
  * version is the one under review. A version the customer has already answered
  * (approved, rejected or asked for changes on) keeps its status and its comment:
  * it is history, and replacing artwork never rewrites what was said about it.
  *
- * The document id is `{jobId}-v{version}`, so two designers uploading at the
- * same instant collide on the create rather than both being handed version 3.
+ * The version number is allocated inside the database, under an advisory lock
+ * on the job, with a unique (job_id, version) index behind it - so two
+ * designers uploading at the same instant cannot both be handed version 3.
  */
 export async function uploadDesign({
   job,
@@ -132,13 +157,12 @@ export async function uploadDesign({
   submitNow = false,
   actor,
 }: UploadDesignInput): Promise<Design> {
-  const version = nextVersionNumber(existing);
-  const designId = designIdFor(job.id, version);
   const now = new Date();
+  const attachmentId = newId();
 
   const attachment = await uploadDesignFile({
     jobId: job.id,
-    designId,
+    attachmentId,
     file,
     mimeType,
     originalFileName,
@@ -146,34 +170,9 @@ export async function uploadDesign({
   });
   const preview = await measurePreview(file, mimeType);
 
-  const status: DesignStatus = submitNow ? 'submitted-for-review' : 'draft';
-  const replaced = existing.filter((design) => isSupersededByNewVersion(design.status));
-
-  const design: Design = {
-    id: designId,
-    jobId: job.id,
-    jobNumber: job.jobNumber,
-    jobTitle: job.title,
-    customerId: job.customerId,
-    customerName: job.customerName,
-    version,
-    file: attachment,
-    preview,
-    uploadedById: actor.uid,
-    uploadedByName: actor.name,
-    uploadedAt: now,
-    status,
-    decision: null,
-    submittedAt: submitNow ? now : null,
-    supersededAt: null,
-    createdAt: now,
-    createdBy: actor.uid,
-    updatedAt: now,
-    updatedBy: actor.uid,
-    ...(designerNote?.trim() ? { designerNote: designerNote.trim() } : {}),
-  };
-
   if (isDemoMode()) {
+    const version = nextVersionNumber(existing);
+    const replaced = existing.filter((design) => isSupersededByNewVersion(design.status));
     for (const previous of replaced) {
       updateDemoDesign(previous.id, {
         status: 'superseded',
@@ -182,31 +181,56 @@ export async function uploadDesign({
         updatedBy: actor.uid,
       });
     }
-    return addDemoDesign(design);
+    return addDemoDesign({
+      id: `${job.id}-v${String(version)}`,
+      jobId: job.id,
+      jobNumber: job.jobNumber,
+      jobTitle: job.title,
+      customerId: job.customerId,
+      customerName: job.customerName,
+      version,
+      file: attachment,
+      preview,
+      uploadedById: actor.uid,
+      uploadedByName: actor.name,
+      uploadedAt: now,
+      status: submitNow ? 'submitted-for-review' : 'draft',
+      decision: null,
+      submittedAt: submitNow ? now : null,
+      supersededAt: null,
+      createdAt: now,
+      createdBy: actor.uid,
+      updatedAt: now,
+      updatedBy: actor.uid,
+      ...(designerNote?.trim() ? { designerNote: designerNote.trim() } : {}),
+    });
   }
 
   try {
-    const batch = writeBatch(getDb());
-    const { id: _id, ...data } = design;
-    batch.set(doc(getDb(), COLLECTIONS.designs, designId), {
-      ...data,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    for (const previous of replaced) {
-      batch.update(doc(getDb(), COLLECTIONS.designs, previous.id), {
-        status: 'superseded',
-        supersededAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-    }
-
-    await batch.commit();
-    return design;
+    const row = unwrap(
+      await getSupabase()
+        .rpc('create_design_version', {
+          p_job_id: job.id,
+          p_payload: {
+            file_id: attachment.id,
+            file_path: attachment.storagePath,
+            file_mime: attachment.mimeType,
+            file_size_bytes: attachment.sizeBytes,
+            file_original_name: attachment.originalFileName,
+            file_uploaded_at: fromDate(attachment.uploadedAt),
+            preview_kind: preview.kind,
+            preview_width: preview.width,
+            preview_height: preview.height,
+            uploaded_by_name: actor.name,
+            designer_note: designerNote?.trim() ? designerNote.trim() : null,
+          },
+          p_submit_now: submitNow,
+        })
+        .single<DesignRow>(),
+    );
+    return toDesign(row);
   } catch (error) {
-    // The document never landed, so nothing points at the file we just wrote.
+    // The row never landed, so nothing points at the file we just wrote.
     await discardDesignFile(attachment);
     throw toAppError(error);
   }
@@ -237,14 +261,15 @@ export async function submitDesignForReview(design: Design, actor: ActorSnapshot
   }
 
   try {
-    const batch = writeBatch(getDb());
-    batch.update(doc(getDb(), COLLECTIONS.designs, design.id), {
-      status: 'submitted-for-review',
-      submittedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
-    await batch.commit();
+    const { error } = await getSupabase()
+      .from(TABLES.designs)
+      .update({
+        status: 'submitted-for-review',
+        submitted_at: fromDate(now),
+        updated_by: actor.uid,
+      })
+      .eq('id', design.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -301,7 +326,9 @@ export async function recordDesignDecision({
     ...(language ? { language } : {}),
   };
 
-  // An earlier approved version steps aside so that a job never has two.
+  // An earlier approved version steps aside so that a job never has two. In
+  // production the database does this inside the same transaction; the demo
+  // store needs to be told.
   const supersede =
     outcome === 'approved' && previouslyApproved && previouslyApproved.id !== design.id
       ? previouslyApproved
@@ -326,24 +353,19 @@ export async function recordDesignDecision({
   }
 
   try {
-    const batch = writeBatch(getDb());
-    batch.update(doc(getDb(), COLLECTIONS.designs, design.id), {
-      status: outcome,
-      decision: { ...decision, decidedAt: serverTimestamp() },
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
+    // The answer and the stepping-aside of any earlier approval happen in one
+    // transaction, so a job is never briefly showing two approved versions.
+    // `record_design_decision` runs as the caller, so the policy that pins the
+    // source to whoever is signed in still applies inside it.
+    const { error } = await getSupabase().rpc('record_design_decision', {
+      p_design_id: design.id,
+      p_outcome: outcome,
+      p_comment: trimmed,
+      p_source: source,
+      p_by_name: actor.name,
+      p_language: language ?? null,
     });
-
-    if (supersede) {
-      batch.update(doc(getDb(), COLLECTIONS.designs, supersede.id), {
-        status: 'superseded',
-        supersededAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-    }
-
-    await batch.commit();
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }

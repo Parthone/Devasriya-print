@@ -3,7 +3,7 @@
  *
  * These are fixed lists for now. They live behind `getDepartments()` /
  * `getDesignations()` so the Settings module can later serve them from
- * Firestore without any form or validation code changing shape.
+ * the database without any form or validation code changing shape.
  */
 export const DEPARTMENTS = [
   'management',

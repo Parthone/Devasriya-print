@@ -1,6 +1,3 @@
-import { deleteField, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
-
-import { parseCustomer, type Customer, type CustomerInput } from '@/features/customers/types';
 import { isDemoMode } from '@/config/demo';
 import {
   addDemoCustomer,
@@ -9,17 +6,17 @@ import {
   setDemoCustomerArchived,
   updateDemoCustomer,
 } from '@/features/demo/demo-store';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { AppError } from '@/types/common';
-import { COLLECTIONS } from '@/services/base/collections';
-import { FirestoreRepository, orderBy } from '@/services/base/repository';
-import type { Id } from '@/types/common';
-
-export const customerRepository = new FirestoreRepository<Customer>(
-  COLLECTIONS.customers,
-  parseCustomer,
-);
+import {
+  CUSTOMER_COLUMNS,
+  toCustomer,
+  toCustomerRow,
+  type CustomerRow,
+} from '@/features/customers/services/customer.rows';
+import type { Customer, CustomerInput } from '@/features/customers/types';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap, unwrapMaybe } from '@/lib/supabase/errors';
+import { TABLES } from '@/services/base/tables';
+import { AppError, type Id } from '@/types/common';
 
 /**
  * Safety cap on the directory fetch.
@@ -29,7 +26,7 @@ export const customerRepository = new FirestoreRepository<Customer>(
  * what people expect, and stays cheap at this size. If a business ever passes
  * this many customers the load reports it (see `capReached`) so search can move
  * server-side behind this same service - the UI calls these functions, never
- * Firestore.
+ * the database.
  */
 export const CUSTOMER_FETCH_CAP = 1000;
 
@@ -45,68 +42,62 @@ export async function listCustomers(): Promise<CustomerDirectory> {
     return { customers: demoCustomers(), capReached: false, cap: CUSTOMER_FETCH_CAP };
   }
 
-  const page = await customerRepository.list({
-    constraints: [orderBy('nameLower', 'asc')],
-    pageSize: CUSTOMER_FETCH_CAP,
-  });
+  // One extra row tells us whether the cap was reached.
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.customers)
+      .select(CUSTOMER_COLUMNS)
+      .order('name_lower', { ascending: true })
+      .limit(CUSTOMER_FETCH_CAP + 1)
+      .returns<CustomerRow[]>(),
+  );
 
-  if (page.hasMore) {
+  const capReached = rows.length > CUSTOMER_FETCH_CAP;
+  if (capReached) {
     console.warn(
       `[customers] more than ${String(CUSTOMER_FETCH_CAP)} customers exist; ` +
         'the directory is showing the first page only. Move search server-side.',
     );
   }
 
-  return { customers: page.items, capReached: page.hasMore, cap: CUSTOMER_FETCH_CAP };
+  return {
+    customers: rows.slice(0, CUSTOMER_FETCH_CAP).map(toCustomer),
+    capReached,
+    cap: CUSTOMER_FETCH_CAP,
+  };
 }
 
 export async function getCustomer(id: Id): Promise<Customer> {
-  if (isDemoMode()) {
-    const customer = demoCustomer(id);
-    if (!customer) throw new AppError('not-found', `No customer with id "${id}".`);
-    return customer;
-  }
-  return customerRepository.getById(id);
+  const customer = await findCustomer(id);
+  if (!customer) throw new AppError('not-found', `No customer with id "${id}".`);
+  return customer;
 }
 
 export async function findCustomer(id: Id): Promise<Customer | null> {
   if (isDemoMode()) return demoCustomer(id);
-  return customerRepository.findById(id);
-}
 
-function documentFor(input: CustomerInput, actorId: Id) {
-  return {
-    ...input,
-    nameLower: input.name.toLowerCase(),
-    updatedAt: serverTimestamp(),
-    updatedBy: actorId,
-  };
+  const row = unwrapMaybe(
+    await getSupabase()
+      .from(TABLES.customers)
+      .select(CUSTOMER_COLUMNS)
+      .eq('id', id)
+      .maybeSingle<CustomerRow>(),
+  );
+  return row ? toCustomer(row) : null;
 }
 
 export async function createCustomer(input: CustomerInput, actorId: Id): Promise<Customer> {
   if (isDemoMode()) return addDemoCustomer(input, actorId);
 
   try {
-    const id = customerRepository.newId();
-    await setDoc(doc(getDb(), COLLECTIONS.customers, id), {
-      ...documentFor(input, actorId),
-      // Reserved for the future customer portal. Never set by this module.
-      portalUserId: null,
-      createdAt: serverTimestamp(),
-      createdBy: actorId,
-    });
-
-    const now = new Date();
-    return {
-      ...input,
-      id,
-      nameLower: input.name.toLowerCase(),
-      portalUserId: null,
-      createdAt: now,
-      createdBy: actorId,
-      updatedAt: now,
-      updatedBy: actorId,
-    };
+    const row = unwrap(
+      await getSupabase()
+        .from(TABLES.customers)
+        .insert({ ...toCustomerRow(input, actorId), created_by: actorId })
+        .select(CUSTOMER_COLUMNS)
+        .single<CustomerRow>(),
+    );
+    return toCustomer(row);
   } catch (error) {
     throw toAppError(error);
   }
@@ -115,8 +106,10 @@ export async function createCustomer(input: CustomerInput, actorId: Id): Promise
 /**
  * Updates the editable fields only.
  *
- * `portalUserId`, `createdAt` and `createdBy` are never part of the payload, so
- * an ordinary edit cannot overwrite them; the security rules enforce the same.
+ * `created_at`, `created_by` and the portal link are not in the column level
+ * UPDATE grant, so an ordinary edit cannot touch them however the payload is
+ * shaped. A cleared optional field is stored as NULL rather than an empty
+ * string, so reads stay clean.
  */
 export async function updateCustomer(id: Id, input: CustomerInput, actorId: Id): Promise<void> {
   if (isDemoMode()) {
@@ -125,16 +118,11 @@ export async function updateCustomer(id: Id, input: CustomerInput, actorId: Id):
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.customers, id), {
-      ...documentFor(input, actorId),
-      // A cleared optional field is removed from the document rather than
-      // stored as an empty value, so reads stay clean.
-      businessName: input.businessName ?? deleteField(),
-      alternateMobile: input.alternateMobile ?? deleteField(),
-      email: input.email ?? deleteField(),
-      gstin: input.gstin ?? deleteField(),
-      notes: input.notes ?? deleteField(),
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.customers)
+      .update(toCustomerRow(input, actorId))
+      .eq('id', id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -148,11 +136,11 @@ export async function setCustomerArchived(id: Id, isArchived: boolean, actorId: 
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.customers, id), {
-      isArchived,
-      updatedAt: serverTimestamp(),
-      updatedBy: actorId,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.customers)
+      .update({ is_archived: isArchived, updated_by: actorId })
+      .eq('id', id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }

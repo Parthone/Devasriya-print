@@ -1,5 +1,3 @@
-import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
-
 import { isDemoMode } from '@/config/demo';
 import {
   addDemoJob,
@@ -7,17 +5,18 @@ import {
   demoJobs,
   nextDemoNumber,
   updateDemoEnquiry,
+  updateDemoJob,
 } from '@/features/demo/demo-store';
 import type { ActorSnapshot } from '@/features/enquiries/services/enquiry.service';
 import type { Enquiry } from '@/features/enquiries/types';
 import { EMPTY_PICKUP, type PickupSnapshot } from '@/features/locations/types';
 import type { Job, JobPriority, JobStatus } from '@/features/jobs/types';
 import { newJobId } from '@/features/jobs/services/job.service';
+import { fromAudioAttachment, toJob, type JobRow } from '@/features/jobs/services/job.rows';
 import { financialYearKey } from '@/lib/financial-year';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { COLLECTIONS } from '@/services/base/collections';
-import { allocateNumberInTransaction } from '@/services/base/counters';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap } from '@/lib/supabase/errors';
+import { fromDate } from '@/lib/supabase/rows';
 import { copyRequirementAudio, discardAudio } from '@/services/storage/audio-storage.service';
 import type { AudioAttachment } from '@/types/attachments';
 import { AppError } from '@/types/common';
@@ -36,7 +35,7 @@ export interface ConvertEnquiryInput {
 /**
  * Turns an enquiry into a job.
  *
- * Everything happens in one Firestore transaction: the job number is allocated,
+ * Everything happens in one database transaction: the job number is allocated,
  * the job is written, and the enquiry is stamped as converted. Either all three
  * land or none of them do, so an enquiry can never be marked converted without
  * the job that it points at.
@@ -44,8 +43,8 @@ export interface ConvertEnquiryInput {
  * A requirement recording is copied to a job-owned storage path first, so that
  * playing it needs only jobs:view and never reaches into enquiry storage. The
  * copy is taken at this moment and lives at an immutable path, so replacing the
- * enquiry recording later cannot change what this job plays. If the Firestore
- * transaction then fails, the copy is discarded rather than left orphaned.
+ * enquiry recording later cannot change what this job plays. If the transaction
+ * then fails, the copy is discarded rather than left orphaned.
  */
 export async function convertEnquiryToJob({
   enquiry,
@@ -99,18 +98,22 @@ export async function convertEnquiryToJob({
       yearKey,
       demoJobs().map((job) => job.jobNumber),
     );
-    const demoAudio = enquiry.requirementAudio
-      ? await copyRequirementAudio(enquiry.requirementAudio, 'jobs', `demo-job-${number}`)
-      : null;
-
     const job = addDemoJob({
-      ...buildBase(demoAudio),
+      ...buildBase(null),
       jobNumber: number,
       createdAt: now,
       createdBy: actor.uid,
       updatedAt: now,
       updatedBy: actor.uid,
     });
+
+    // Copied under the job's own id, as production does, so the demo shows the
+    // same isolation: the job plays its own object, never the enquiry's.
+    if (enquiry.requirementAudio) {
+      const demoAudio = await copyRequirementAudio(enquiry.requirementAudio, 'jobs', job.id);
+      updateDemoJob(job.id, { requirementAudio: demoAudio });
+      job.requirementAudio = demoAudio;
+    }
     updateDemoEnquiry(enquiry.id, {
       status: 'converted',
       convertedJobId: job.id,
@@ -122,7 +125,7 @@ export async function convertEnquiryToJob({
 
   const jobId = newJobId();
 
-  // Copy the recording to a job owned path before touching Firestore. If this
+  // Copy the recording into the job bucket before touching the database. If this
   // fails, nothing has been written yet and the enquiry stays exactly as it was.
   const audio: AudioAttachment | null = enquiry.requirementAudio
     ? await copyRequirementAudio(enquiry.requirementAudio, 'jobs', jobId)
@@ -131,50 +134,40 @@ export async function convertEnquiryToJob({
   const base = buildBase(audio);
 
   try {
-    const jobNumber = await runTransaction(getDb(), async (transaction) => {
-      const enquiryRef = doc(getDb(), COLLECTIONS.enquiries, enquiry.id);
-      const snapshot = await transaction.get(enquiryRef);
+    // The job number, the job row and the stamp on the enquiry all land in one
+    // transaction inside the database, and the enquiry is locked while it runs,
+    // so two people converting at the same moment cannot both succeed.
+    const row = unwrap(
+      await getSupabase()
+        .rpc('convert_enquiry_to_job', {
+          p_enquiry_id: enquiry.id,
+          p_payload: {
+            id: jobId,
+            customer_id: base.customerId,
+            customer_name: base.customerName,
+            customer_mobile: base.customerMobile,
+            job_date: fromDate(base.jobDate),
+            title: base.title,
+            requirement_text: base.requirementText,
+            ...fromAudioAttachment(audio),
+            priority: base.priority,
+            expected_delivery_date: fromDate(base.expectedDeliveryDate),
+            internal_notes: base.internalNotes ?? null,
+            pickup_location_id: base.pickupLocationId,
+            pickup_location_name: base.pickupLocationName,
+            contact_person_id: base.contactPersonId,
+            contact_person_name: base.contactPersonName,
+            contact_person_mobile: base.contactPersonMobile,
+            assigned_to_id: null,
+            assigned_to_name: null,
+            status: base.status,
+          },
+          p_year_key: yearKey,
+        })
+        .single<JobRow>(),
+    );
 
-      if (!snapshot.exists()) {
-        throw new AppError('not-found', 'This enquiry no longer exists.');
-      }
-      // Re-checked inside the transaction: two people converting at the same
-      // moment cannot both succeed.
-      if (snapshot.data().convertedJobId) {
-        throw new AppError('conflict', 'This enquiry was already converted to a job.');
-      }
-
-      const number = await allocateNumberInTransaction(transaction, 'jobs', yearKey);
-
-      transaction.set(doc(getDb(), COLLECTIONS.jobs, jobId), {
-        ...base,
-        jobNumber: number,
-        createdAt: serverTimestamp(),
-        createdBy: actor.uid,
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-
-      transaction.update(enquiryRef, {
-        status: 'converted',
-        convertedJobId: jobId,
-        convertedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-
-      return number;
-    });
-
-    return {
-      ...base,
-      id: jobId,
-      jobNumber,
-      createdAt: now,
-      createdBy: actor.uid,
-      updatedAt: now,
-      updatedBy: actor.uid,
-    };
+    return toJob(row);
   } catch (error) {
     // The job was never written, so the copy belongs to nothing. Remove it.
     // The enquiry recording itself is untouched either way.

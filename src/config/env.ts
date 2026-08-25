@@ -4,44 +4,54 @@ import { z } from 'zod';
  * Runtime environment parsing.
  *
  * Nothing here throws at import time - a missing `.env.local` must produce a
- * clear, actionable error at the point Firebase is first used, not a blank
+ * clear, actionable error at the point Supabase is first used, not a blank
  * screen during module evaluation (and not a failing test suite).
  */
-const booleanish = z
-  .enum(['true', 'false', '1', '0', ''])
-  .optional()
-  .transform((value) => value === 'true' || value === '1');
-
-const firebaseEnvSchema = z.object({
-  VITE_FIREBASE_API_KEY: z.string().min(1, 'VITE_FIREBASE_API_KEY is required'),
-  VITE_FIREBASE_AUTH_DOMAIN: z.string().min(1, 'VITE_FIREBASE_AUTH_DOMAIN is required'),
-  VITE_FIREBASE_PROJECT_ID: z.string().min(1, 'VITE_FIREBASE_PROJECT_ID is required'),
-  VITE_FIREBASE_STORAGE_BUCKET: z.string().min(1, 'VITE_FIREBASE_STORAGE_BUCKET is required'),
-  VITE_FIREBASE_MESSAGING_SENDER_ID: z
-    .string()
-    .min(1, 'VITE_FIREBASE_MESSAGING_SENDER_ID is required'),
-  VITE_FIREBASE_APP_ID: z.string().min(1, 'VITE_FIREBASE_APP_ID is required'),
-  VITE_FIREBASE_MEASUREMENT_ID: z.string().optional(),
+const supabaseEnvSchema = z.object({
+  VITE_SUPABASE_URL: z
+    .string({ required_error: 'VITE_SUPABASE_URL is required' })
+    .min(1, 'VITE_SUPABASE_URL is required')
+    .url('VITE_SUPABASE_URL must be a URL like https://xxxx.supabase.co'),
+  VITE_SUPABASE_ANON_KEY: z
+    .string({ required_error: 'VITE_SUPABASE_ANON_KEY is required' })
+    .min(1, 'VITE_SUPABASE_ANON_KEY is required'),
 });
 
 export type RawEnv = Record<string, string | boolean | undefined>;
 
-export interface FirebaseEnv {
-  apiKey: string;
-  authDomain: string;
-  projectId: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  appId: string;
-  measurementId?: string;
+/**
+ * The two variables this application reads, named one at a time.
+ *
+ * Deliberately not `import.meta.env` itself: referencing the whole object makes
+ * Vite inline every VITE_ variable it can find into the bundle, including ones
+ * that have nothing to do with this build. Naming them keeps the bundle honest
+ * about what it actually depends on.
+ */
+function currentEnv(): RawEnv {
+  return {
+    VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
+    VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
+  };
+}
+
+export interface SupabaseEnv {
+  url: string;
+  anonKey: string;
 }
 
 export type EnvParseResult =
-  { ok: true; env: FirebaseEnv } | { ok: false; issues: string[]; message: string };
+  { ok: true; env: SupabaseEnv } | { ok: false; issues: string[]; message: string };
 
-/** Parses and validates the Firebase environment variables. Never throws. */
-export function parseFirebaseEnv(source: RawEnv = import.meta.env): EnvParseResult {
-  const parsed = firebaseEnvSchema.safeParse(source);
+/**
+ * Parses and validates the Supabase environment variables. Never throws.
+ *
+ * Only the publishable anon key belongs here. The service-role key bypasses
+ * every row level security policy in the database, so it exists solely inside
+ * Edge Functions and local admin scripts - putting it in a `VITE_` variable
+ * would bake it into the browser bundle for anyone to read.
+ */
+export function parseSupabaseEnv(source: RawEnv = currentEnv()): EnvParseResult {
+  const parsed = supabaseEnvSchema.safeParse(source);
 
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => issue.message);
@@ -49,38 +59,18 @@ export function parseFirebaseEnv(source: RawEnv = import.meta.env): EnvParseResu
       ok: false,
       issues,
       message: [
-        'Firebase configuration is missing or incomplete.',
-        'Copy `.env.example` to `.env.local` and fill in the values from the Firebase console.',
+        'Supabase configuration is missing or incomplete.',
+        'Copy `.env.example` to `.env.local` and fill in the values from the Supabase dashboard',
+        '(Project Settings > API).',
         ...issues.map((issue) => `  - ${issue}`),
       ].join('\n'),
     };
   }
 
-  const data = parsed.data;
-  const env: FirebaseEnv = {
-    apiKey: data.VITE_FIREBASE_API_KEY,
-    authDomain: data.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: data.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: data.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: data.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: data.VITE_FIREBASE_APP_ID,
-  };
-
   return {
     ok: true,
-    env: data.VITE_FIREBASE_MEASUREMENT_ID
-      ? { ...env, measurementId: data.VITE_FIREBASE_MEASUREMENT_ID }
-      : env,
+    env: { url: parsed.data.VITE_SUPABASE_URL, anonKey: parsed.data.VITE_SUPABASE_ANON_KEY },
   };
-}
-
-/** True when the app should talk to the Firebase Emulator Suite. */
-export function shouldUseEmulators(source: RawEnv = import.meta.env): boolean {
-  return booleanish.parse(
-    typeof source.VITE_USE_FIREBASE_EMULATORS === 'string'
-      ? source.VITE_USE_FIREBASE_EMULATORS
-      : undefined,
-  );
 }
 
 export const IS_DEV = import.meta.env.DEV;

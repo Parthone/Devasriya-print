@@ -9,7 +9,7 @@ import { AppError, type Entity, type Id } from '@/types/common';
  * Deliberately a different collection from `users`. A customer is not a staff
  * member with fewer permissions - they are a different kind of principal
  * altogether, with no role, no entry in the permission matrix and no reachable
- * staff screen. The document id is the Firebase Auth uid, which is the link the
+ * staff screen. The row id is the Supabase Auth uid, which is the link the
  * security rules are built on, exactly as `users/{uid}` is for employees.
  *
  * One uid is never both: creating either kind of account is refused by the

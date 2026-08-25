@@ -1,10 +1,5 @@
 export { AuditLogDialog } from './components/AuditLogDialog';
-export {
-  auditRepository,
-  buildAuditDocument,
-  listAuditEventsForUser,
-  listRecentAuditEvents,
-} from './services/audit.service';
+export { listAuditEventsForUser, listRecentAuditEvents } from './services/audit.service';
 export {
   AUDIT_ACTIONS,
   AUDIT_ACTION_LABELS,

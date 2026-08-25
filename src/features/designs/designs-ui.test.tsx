@@ -246,7 +246,7 @@ describe('who may open the designs screen', () => {
     },
   );
 
-  it('sends accounts to the forbidden page and never asks Firestore for designs', async () => {
+  it('sends accounts to the forbidden page and never asks the database for designs', async () => {
     renderAsRole('accounts');
 
     expect(await screen.findByRole('heading', { name: /access denied/i })).toBeVisible();

@@ -1,43 +1,52 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseFirebaseEnv, shouldUseEmulators, type RawEnv } from '@/config/env';
+import { parseSupabaseEnv } from '@/config/env';
 
-const completeEnv: RawEnv = {
-  VITE_FIREBASE_API_KEY: 'test-api-key',
-  VITE_FIREBASE_AUTH_DOMAIN: 'test.firebaseapp.com',
-  VITE_FIREBASE_PROJECT_ID: 'test-project',
-  VITE_FIREBASE_STORAGE_BUCKET: 'test.appspot.com',
-  VITE_FIREBASE_MESSAGING_SENDER_ID: '1234567890',
-  VITE_FIREBASE_APP_ID: '1:1234567890:web:abcdef',
+const COMPLETE = {
+  VITE_SUPABASE_URL: 'https://abcdefgh.supabase.co',
+  VITE_SUPABASE_ANON_KEY: 'anon-key',
 };
 
-describe('parseFirebaseEnv', () => {
-  it('maps environment variables onto the Firebase options', () => {
-    const result = parseFirebaseEnv(completeEnv);
+describe('parseSupabaseEnv', () => {
+  it('accepts a complete configuration', () => {
+    const result = parseSupabaseEnv(COMPLETE);
+
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.env.projectId).toBe('test-project');
-    expect(result.env.measurementId).toBeUndefined();
+    if (!result.ok) throw new Error('expected a valid configuration');
+    expect(result.env.url).toBe('https://abcdefgh.supabase.co');
+    expect(result.env.anonKey).toBe('anon-key');
   });
 
-  it('reports every missing variable instead of throwing', () => {
-    const result = parseFirebaseEnv({ VITE_FIREBASE_API_KEY: 'only-this-one' });
+  it('never throws on a missing configuration, and says what to do', () => {
+    const result = parseSupabaseEnv({});
+
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.issues.length).toBe(5);
+    if (result.ok) throw new Error('expected an invalid configuration');
+    expect(result.issues).toHaveLength(2);
     expect(result.message).toContain('.env.local');
+    expect(result.message).toContain('VITE_SUPABASE_URL is required');
   });
 
-  it('includes the measurement id only when it is set', () => {
-    const result = parseFirebaseEnv({ ...completeEnv, VITE_FIREBASE_MEASUREMENT_ID: 'G-ABC123' });
-    expect(result.ok && result.env.measurementId).toBe('G-ABC123');
-  });
-});
+  it('rejects a url that is not a url', () => {
+    const result = parseSupabaseEnv({ ...COMPLETE, VITE_SUPABASE_URL: 'not-a-url' });
 
-describe('shouldUseEmulators', () => {
-  it('is off unless explicitly enabled', () => {
-    expect(shouldUseEmulators({})).toBe(false);
-    expect(shouldUseEmulators({ VITE_USE_FIREBASE_EMULATORS: 'false' })).toBe(false);
-    expect(shouldUseEmulators({ VITE_USE_FIREBASE_EMULATORS: 'true' })).toBe(true);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected an invalid configuration');
+    expect(result.message).toContain('https://xxxx.supabase.co');
+  });
+
+  it('has no place for the service role key', () => {
+    // The service role key bypasses every row level security policy. Anything
+    // prefixed VITE_ is compiled into the browser bundle, so if this ever
+    // starts parsing one, the key is one build away from being public.
+    const parsed = parseSupabaseEnv({
+      ...COMPLETE,
+      VITE_SUPABASE_SERVICE_ROLE_KEY: 'must-never-be-read',
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error('expected a valid configuration');
+    expect(Object.values(parsed.env)).not.toContain('must-never-be-read');
+    expect(Object.keys(parsed.env)).toEqual(['url', 'anonKey']);
   });
 });

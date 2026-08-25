@@ -11,34 +11,30 @@ import { demoDesign, demoDesignsForJob, resetDemoStore } from '@/features/demo/d
 /**
  * Design review in demo mode, on both sides of the conversation.
  *
- * Every Firebase entry point is a spy that must never be called - that is the
+ * Every backend entry point is a spy that must never be called - that is the
  * promise the GitHub demo makes, and the customer portal has to keep it too.
  */
-const firebase = vi.hoisted(() => ({
+const backend = vi.hoisted(() => ({
   observeAuthState: vi.fn(),
   signInWithEmail: vi.fn(),
-  getFirebaseAuth: vi.fn(),
-  getDb: vi.fn(),
-  getFirebaseStorage: vi.fn(),
+  getSupabase: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
   ensurePersistence: vi.fn(),
-  observeAuthState: firebase.observeAuthState,
-  signInWithEmail: firebase.signInWithEmail,
+  observeAuthState: backend.observeAuthState,
+  signInWithEmail: backend.signInWithEmail,
   signOutCurrentUser: vi.fn(),
   sendPasswordSetupEmail: vi.fn(),
+  updatePassword: vi.fn(),
   getCurrentIdToken: vi.fn(),
 }));
 
-vi.mock('@/lib/firebase/client', () => ({
-  getFirebaseApp: vi.fn(() => {
-    throw new Error('Firebase must not be initialised in demo mode');
+vi.mock('@/lib/supabase/client', () => ({
+  getSupabase: backend.getSupabase.mockImplementation(() => {
+    throw new Error('Supabase must not be contacted in demo mode');
   }),
-  getFirebaseAuth: firebase.getFirebaseAuth,
-  getDb: firebase.getDb,
-  getFirebaseStorage: firebase.getFirebaseStorage,
-  resetFirebaseForTests: vi.fn(),
+  resetSupabaseForTests: vi.fn(),
 }));
 
 function RoutesRenderer() {
@@ -55,11 +51,10 @@ function renderDemoApp(path: string) {
   );
 }
 
-function expectNoFirebaseCalls() {
-  expect(firebase.observeAuthState).not.toHaveBeenCalled();
-  expect(firebase.signInWithEmail).not.toHaveBeenCalled();
-  expect(firebase.getDb).not.toHaveBeenCalled();
-  expect(firebase.getFirebaseStorage).not.toHaveBeenCalled();
+function expectNoBackendCalls() {
+  expect(backend.observeAuthState).not.toHaveBeenCalled();
+  expect(backend.signInWithEmail).not.toHaveBeenCalled();
+  expect(backend.getSupabase).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -77,7 +72,7 @@ afterEach(() => {
 });
 
 describe('demo designs, staff side', () => {
-  it('lists the sample versions without touching Firebase', async () => {
+  it('lists the sample versions without touching the backend', async () => {
     renderDemoApp(ROUTES.designs);
 
     expect(
@@ -85,7 +80,7 @@ describe('demo designs, staff side', () => {
     ).toBeInTheDocument();
     const table = within(await screen.findByRole('table'));
     expect(table.getByRole('link', { name: 'JOB-2627-0002' })).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('shows the whole conversation on the job, comments and all', async () => {
@@ -100,7 +95,7 @@ describe('demo designs, staff side', () => {
     expect(
       screen.getByText('Approved, but please make the phone number a little bigger when printing.'),
     ).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('records a staff-entered change request in memory', async () => {
@@ -123,7 +118,7 @@ describe('demo designs, staff side', () => {
     const stored = demoDesign('demo-job-2-v1');
     expect(stored?.decision?.source).toBe('staff');
     expect(stored?.decision?.comment).toBe('Label ka size chhota karein');
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('uploads a revision in memory, leaving the answered version alone', async () => {
@@ -147,7 +142,7 @@ describe('demo designs, staff side', () => {
     expect(versions[0]?.version).toBe(3);
     expect(demoDesign('demo-job-1-v2')?.status).toBe('approved');
     expect(demoDesign('demo-job-1-v2')?.decision?.comment).toMatch(/phone number/);
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });
 
@@ -156,14 +151,14 @@ describe('the demo customer portal', () => {
     sessionStorage.setItem('devasriya-print.demo-session', 'customer');
   });
 
-  it('shows the sample customer their own designs, in Hindi, with no Firebase call', async () => {
+  it('shows the sample customer their own designs, in Hindi, with no backend call', async () => {
     renderDemoApp(ROUTES.portal);
 
     expect(await screen.findByRole('heading', { name: 'आपके डिज़ाइन' })).toBeInTheDocument();
     expect(screen.getAllByText(/JOB-2627-0001/).length).toBeGreaterThan(0);
     // The other demo customer's job never appears.
     expect(screen.queryByText(/JOB-2627-0002/)).not.toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('answers a design in memory, keeping the comment on an approval', async () => {
@@ -178,7 +173,7 @@ describe('the demo customer portal', () => {
 
     await user.click(screen.getByRole('button', { name: 'English' }));
     expect(await screen.findByText('You approved this version')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('keeps the earlier version and its change request visible', async () => {
@@ -189,13 +184,13 @@ describe('the demo customer portal', () => {
     expect(
       screen.getByText('Please make the discount percentage much larger and use a deeper red.'),
     ).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('never lets the demo customer into the staff application', async () => {
     renderDemoApp(ROUTES.jobs);
 
     expect(await screen.findByRole('heading', { name: 'आपके डिज़ाइन' })).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });

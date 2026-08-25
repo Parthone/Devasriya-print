@@ -1,5 +1,3 @@
-import { deleteField, doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
-
 import { isDemoMode } from '@/config/demo';
 import {
   addDemoEstimate,
@@ -16,24 +14,22 @@ import {
   DEFAULT_VALIDITY_DAYS,
   ESTIMATE_STATUS_LABELS,
   isEditable,
-  parseEstimate,
   type Estimate,
   type EstimateStatus,
 } from '@/features/estimates/types';
+import {
+  ESTIMATE_COLUMNS,
+  toEstimate,
+  type EstimateRow,
+} from '@/features/estimates/services/estimate.rows';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
 import type { Job } from '@/features/jobs/types';
 import { financialYearKey } from '@/lib/financial-year';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { COLLECTIONS } from '@/services/base/collections';
-import { allocateNumberInTransaction } from '@/services/base/counters';
-import { FirestoreRepository, orderBy } from '@/services/base/repository';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap, unwrapMaybe } from '@/lib/supabase/errors';
+import { fromDate } from '@/lib/supabase/rows';
+import { TABLES } from '@/services/base/tables';
 import { AppError, type Id } from '@/types/common';
-
-export const estimateRepository = new FirestoreRepository<Estimate>(
-  COLLECTIONS.estimates,
-  parseEstimate,
-);
 
 export const ESTIMATE_FETCH_CAP = 500;
 
@@ -48,23 +44,40 @@ export async function listEstimates(): Promise<EstimateDirectory> {
     return { estimates: demoEstimates(), capReached: false, cap: ESTIMATE_FETCH_CAP };
   }
 
-  const page = await estimateRepository.list({
-    constraints: [orderBy('estimateDate', 'desc')],
-    pageSize: ESTIMATE_FETCH_CAP,
-  });
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.estimates)
+      .select(ESTIMATE_COLUMNS)
+      .order('estimate_date', { ascending: false })
+      .limit(ESTIMATE_FETCH_CAP + 1)
+      .returns<EstimateRow[]>(),
+  );
 
-  if (page.hasMore) {
+  const capReached = rows.length > ESTIMATE_FETCH_CAP;
+  if (capReached) {
     console.warn(
       `[estimates] more than ${String(ESTIMATE_FETCH_CAP)} estimates exist; showing the most recent.`,
     );
   }
 
-  return { estimates: page.items, capReached: page.hasMore, cap: ESTIMATE_FETCH_CAP };
+  return {
+    estimates: rows.slice(0, ESTIMATE_FETCH_CAP).map(toEstimate),
+    capReached,
+    cap: ESTIMATE_FETCH_CAP,
+  };
 }
 
 export async function findEstimate(id: Id): Promise<Estimate | null> {
   if (isDemoMode()) return demoEstimate(id);
-  return estimateRepository.findById(id);
+
+  const row = unwrapMaybe(
+    await getSupabase()
+      .from(TABLES.estimates)
+      .select(ESTIMATE_COLUMNS)
+      .eq('id', id)
+      .maybeSingle<EstimateRow>(),
+  );
+  return row ? toEstimate(row) : null;
 }
 
 export function defaultValidUntil(from: Date = new Date()): Date {
@@ -150,29 +163,24 @@ export async function createEstimate({
   }
 
   try {
-    const id = estimateRepository.newId();
-    const estimateNumber = await runTransaction(getDb(), async (transaction) => {
-      const number = await allocateNumberInTransaction(transaction, 'estimates', yearKey);
-      transaction.set(doc(getDb(), COLLECTIONS.estimates, id), {
-        ...base,
-        estimateNumber: number,
-        createdAt: serverTimestamp(),
-        createdBy: actor.uid,
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-      return number;
-    });
+    // The lines are copied inside the database, straight from job_pricing_lines,
+    // so the client never gets to say what the prices were. That is what makes
+    // the snapshot a record rather than a claim.
+    const created = unwrap(
+      await getSupabase()
+        .rpc('create_estimate', {
+          p_job_id: job.id,
+          p_valid_until: fromDate(validUntil),
+          p_notes: notes?.trim() ?? null,
+          p_terms: terms?.trim() ? terms.trim() : DEFAULT_TERMS,
+          p_year_key: yearKey,
+        })
+        .single<EstimateRow>(),
+    );
 
-    return {
-      ...base,
-      id,
-      estimateNumber,
-      createdAt: now,
-      createdBy: actor.uid,
-      updatedAt: now,
-      updatedBy: actor.uid,
-    };
+    const full = await findEstimate(created.id);
+    if (!full) throw new AppError('not-found', 'The quotation could not be read back.');
+    return full;
   } catch (error) {
     throw toAppError(error);
   }
@@ -221,15 +229,19 @@ export async function updateDraftEstimate({
   }
 
   try {
-    // Cleared wording is removed rather than stored as null - the stored shape
-    // stays exactly what the parser expects to read back.
-    await updateDoc(doc(getDb(), COLLECTIONS.estimates, estimate.id), {
-      validUntil,
-      notes: trimmedNotes ?? deleteField(),
-      terms: trimmedTerms ?? deleteField(),
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    // Cleared wording is stored as NULL rather than an empty string, so reads
+    // stay clean. A trigger refuses this entirely once the quotation has been
+    // sent, whatever the caller believes about its status.
+    const { error } = await getSupabase()
+      .from(TABLES.estimates)
+      .update({
+        valid_until: fromDate(validUntil),
+        notes: trimmedNotes ?? null,
+        terms: trimmedTerms ?? null,
+        updated_by: actor.uid,
+      })
+      .eq('id', estimate.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -255,12 +267,11 @@ export async function markEstimateSent(estimate: Estimate, actor: ActorSnapshot)
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.estimates, estimate.id), {
-      status: 'sent',
-      sentAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.estimates)
+      .update({ status: 'sent', sent_at: fromDate(sentAt), updated_by: actor.uid })
+      .eq('id', estimate.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -294,12 +305,19 @@ export async function recordEstimateDecision(
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.estimates, estimate.id), {
-      status: outcome,
-      decision: { ...decision, at: serverTimestamp() },
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.estimates)
+      .update({
+        status: outcome,
+        decision_outcome: outcome,
+        decision_at: fromDate(decision.at),
+        decision_by_id: actor.uid,
+        decision_by_name: actor.name,
+        decision_note: note?.trim() ? note.trim() : null,
+        updated_by: actor.uid,
+      })
+      .eq('id', estimate.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -320,12 +338,15 @@ export async function closeEstimate(
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.estimates, estimate.id), {
-      status,
-      cancelledAt: status === 'cancelled' ? serverTimestamp() : null,
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.estimates)
+      .update({
+        status,
+        cancelled_at: fromDate(cancelledAt),
+        updated_by: actor.uid,
+      })
+      .eq('id', estimate.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }

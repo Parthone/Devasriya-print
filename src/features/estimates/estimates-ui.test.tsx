@@ -269,7 +269,7 @@ describe('who may open the quotations screen', () => {
   );
 
   it.each(['designer', 'production'] as UserRole[])(
-    'sends %s to the forbidden page and never asks Firestore for quotations',
+    'sends %s to the forbidden page and never asks the database for quotations',
     async (role) => {
       renderAsRole(role);
 

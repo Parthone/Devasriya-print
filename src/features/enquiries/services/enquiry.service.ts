@@ -1,5 +1,3 @@
-import { doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
-
 import { isDemoMode } from '@/config/demo';
 import {
   addDemoEnquiry,
@@ -10,24 +8,25 @@ import {
 } from '@/features/demo/demo-store';
 import {
   MAX_FOLLOW_UPS,
-  parseEnquiry,
   type Enquiry,
   type EnquiryInput,
   type FollowUpEntry,
 } from '@/features/enquiries/types';
+import {
+  ENQUIRY_COLUMNS,
+  fromAudioAttachment,
+  toEnquiry,
+  toEnquiryRow,
+  type EnquiryRow,
+} from '@/features/enquiries/services/enquiry.rows';
 import { financialYearKey } from '@/lib/financial-year';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { allocateNumberInTransaction } from '@/services/base/counters';
-import { COLLECTIONS } from '@/services/base/collections';
-import { FirestoreRepository, orderBy } from '@/services/base/repository';
+import { newId } from '@/lib/ids';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap, unwrapMaybe } from '@/lib/supabase/errors';
+import { fromDate } from '@/lib/supabase/rows';
+import { TABLES } from '@/services/base/tables';
 import type { AudioAttachment } from '@/types/attachments';
 import { AppError, type Id } from '@/types/common';
-
-export const enquiryRepository = new FirestoreRepository<Enquiry>(
-  COLLECTIONS.enquiries,
-  parseEnquiry,
-);
 
 /** Same approach as the customer directory: one capped fetch, then filter here. */
 export const ENQUIRY_FETCH_CAP = 500;
@@ -54,29 +53,46 @@ export async function listEnquiries(): Promise<EnquiryDirectory> {
     return { enquiries: demoEnquiries(), capReached: false, cap: ENQUIRY_FETCH_CAP };
   }
 
-  const page = await enquiryRepository.list({
-    constraints: [orderBy('enquiryDate', 'desc')],
-    pageSize: ENQUIRY_FETCH_CAP,
-  });
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.enquiries)
+      .select(ENQUIRY_COLUMNS)
+      .order('enquiry_date', { ascending: false })
+      .limit(ENQUIRY_FETCH_CAP + 1)
+      .returns<EnquiryRow[]>(),
+  );
 
-  if (page.hasMore) {
+  const capReached = rows.length > ENQUIRY_FETCH_CAP;
+  if (capReached) {
     console.warn(
       `[enquiries] more than ${String(ENQUIRY_FETCH_CAP)} enquiries exist; the list shows the most recent only.`,
     );
   }
 
-  return { enquiries: page.items, capReached: page.hasMore, cap: ENQUIRY_FETCH_CAP };
+  return {
+    enquiries: rows.slice(0, ENQUIRY_FETCH_CAP).map(toEnquiry),
+    capReached,
+    cap: ENQUIRY_FETCH_CAP,
+  };
 }
 
 export async function findEnquiry(id: Id): Promise<Enquiry | null> {
   if (isDemoMode()) return demoEnquiry(id);
-  return enquiryRepository.findById(id);
+
+  const row = unwrapMaybe(
+    await getSupabase()
+      .from(TABLES.enquiries)
+      .select(ENQUIRY_COLUMNS)
+      .eq('id', id)
+      .maybeSingle<EnquiryRow>(),
+  );
+  return row ? toEnquiry(row) : null;
 }
 
 /** A new enquiry id, needed before uploading audio to its immutable path. */
 export function newEnquiryId(): Id {
   if (isDemoMode()) return `demo-enquiry-pending-${String(Date.now())}`;
-  return enquiryRepository.newId();
+  return newId();
 }
 
 export interface CreateEnquiryInput {
@@ -127,28 +143,26 @@ export async function createEnquiry({
   }
 
   try {
-    const enquiryNumber = await runTransaction(getDb(), async (transaction) => {
-      const number = await allocateNumberInTransaction(transaction, 'enquiries', yearKey);
-      transaction.set(doc(getDb(), COLLECTIONS.enquiries, id), {
-        ...base,
-        enquiryNumber: number,
-        createdAt: serverTimestamp(),
-        createdBy: actor.uid,
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-      return number;
-    });
-
-    return {
-      ...base,
-      id,
-      enquiryNumber,
-      createdAt: now,
-      createdBy: actor.uid,
-      updatedAt: now,
-      updatedBy: actor.uid,
-    };
+    // The number is allocated and the row written in one transaction, inside
+    // the database, so two people taking an enquiry at the same moment cannot
+    // be handed the same ENQ number.
+    const row = unwrap(
+      await getSupabase()
+        .rpc('create_enquiry', {
+          p_payload: {
+            id,
+            ...toEnquiryRow(input, customer),
+            ...fromAudioAttachment(audio),
+            assigned_to_id: null,
+            assigned_to_name: null,
+            converted_job_id: null,
+            converted_at: null,
+          },
+          p_year_key: yearKey,
+        })
+        .single<EnquiryRow>(),
+    );
+    return toEnquiry({ ...row, enquiry_follow_ups: [] });
   } catch (error) {
     throw toAppError(error);
   }
@@ -186,16 +200,6 @@ export async function updateEnquiry({
     throw new AppError('invalid-input', 'Use "Convert to job" to mark an enquiry converted.');
   }
 
-  const changes = {
-    ...input,
-    customerId: customer.id,
-    customerName: customer.name,
-    customerMobile: customer.mobile,
-    notes: input.notes ?? null,
-    lostReason: input.lostReason ?? null,
-    ...(audio === undefined ? {} : { requirementAudio: audio }),
-  };
-
   if (isDemoMode()) {
     updateDemoEnquiry(previous.id, {
       ...input,
@@ -209,11 +213,15 @@ export async function updateEnquiry({
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.enquiries, previous.id), {
-      ...changes,
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.enquiries)
+      .update({
+        ...toEnquiryRow(input, customer),
+        ...(audio === undefined ? {} : fromAudioAttachment(audio)),
+        updated_by: actor.uid,
+      })
+      .eq('id', previous.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -241,13 +249,16 @@ export async function addFollowUp(
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.enquiries, enquiry.id), {
-      followUps,
-      nextFollowUpAt,
-      status,
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
+    // The note and the status move land together: an enquiry that says
+    // "contacted" with no record of the contact is worse than either half.
+    const { error } = await getSupabase().rpc('add_enquiry_follow_up', {
+      p_enquiry_id: enquiry.id,
+      p_note: entry.note,
+      p_by_name: actor.name,
+      p_status: status,
+      p_next_follow_up_at: fromDate(nextFollowUpAt),
     });
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -259,22 +270,25 @@ export async function assignEnquiry(
   assignee: { id: Id; name: string } | null,
   actor: ActorSnapshot,
 ): Promise<void> {
-  const changes = {
-    assignedToId: assignee?.id ?? null,
-    assignedToName: assignee?.name ?? null,
-  };
-
   if (isDemoMode()) {
-    updateDemoEnquiry(enquiryId, { ...changes, updatedBy: actor.uid });
+    updateDemoEnquiry(enquiryId, {
+      assignedToId: assignee?.id ?? null,
+      assignedToName: assignee?.name ?? null,
+      updatedBy: actor.uid,
+    });
     return;
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.enquiries, enquiryId), {
-      ...changes,
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.enquiries)
+      .update({
+        assigned_to_id: assignee?.id ?? null,
+        assigned_to_name: assignee?.name ?? null,
+        updated_by: actor.uid,
+      })
+      .eq('id', enquiryId);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }

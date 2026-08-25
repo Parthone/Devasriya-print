@@ -15,7 +15,7 @@ export function createQueryClient(): QueryClient {
     defaultOptions: {
       queries: {
         // Job and production data changes through the day; a short stale window
-        // keeps screens responsive without hammering Firestore on every mount.
+        // keeps screens responsive without hammering the database on every mount.
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         refetchOnWindowFocus: true,

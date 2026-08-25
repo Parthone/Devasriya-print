@@ -20,10 +20,5 @@
 
     "types": ["node"]
   },
-  "include": [
-    "vite.config.ts",
-    "vitest.rules.config.ts",
-    "vitest.emulator.config.ts",
-    "eslint.config.js"
-  ]
+  "include": ["vite.config.ts", "vitest.integration.config.ts", "eslint.config.js"]
 }

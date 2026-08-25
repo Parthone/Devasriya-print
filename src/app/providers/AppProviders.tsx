@@ -19,7 +19,7 @@ import { LanguageBridge } from '@/i18n/LanguageBridge';
  */
 export function AppProviders({ children }: { children: ReactNode }) {
   // Demo mode swaps the session provider only. Everything downstream - guards,
-  // permissions, screens - is identical, and the Firebase provider is simply
+  // permissions, screens - is identical, and the Supabase session provider is simply
   // not mounted, so no auth listener or sign-in call is ever made.
   const SessionProvider = isDemoMode() ? DemoAuthProvider : AuthProvider;
 

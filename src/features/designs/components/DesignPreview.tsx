@@ -12,7 +12,7 @@ import { humanFileSize } from '@/services/storage/design-storage.service';
  *
  * The viewable URL is resolved when the component mounts, for whoever is signed
  * in - it is never stored on the document, so a link cannot be lifted out of
- * Firestore and used by somebody the rules would refuse. Images render inline;
+ * the database and used by somebody the policies would refuse. Images render inline;
  * a PDF gets an open action, which is the browser's own viewer rather than a
  * bundled one.
  */

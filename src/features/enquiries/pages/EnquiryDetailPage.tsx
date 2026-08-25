@@ -180,7 +180,7 @@ export function EnquiryDetailPage() {
           <CardContent className="space-y-3">
             <p className="text-sm whitespace-pre-wrap">{enquiry.requirementText}</p>
             {enquiry.requirementAudio ? (
-              <AudioPlayer attachment={enquiry.requirementAudio} />
+              <AudioPlayer attachment={enquiry.requirementAudio} owner="enquiries" />
             ) : (
               <p className="text-sm text-muted-foreground">No voice recording.</p>
             )}

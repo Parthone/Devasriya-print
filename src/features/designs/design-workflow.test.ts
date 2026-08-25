@@ -128,7 +128,7 @@ describe('uploading versions', () => {
     expect(first.id).toBe(designIdFor('job-w', 1));
     expect(first.status).toBe('submitted-for-review');
     expect(first.decision).toBeNull();
-    expect(first.file.storagePath).toBe(`designs/job-w/${first.id}/${first.file.id}.png`);
+    expect(first.file.storagePath).toBe(`job-w/${first.file.id}.png`);
   });
 
   it('counts up and writes each version to a path of its own', async () => {

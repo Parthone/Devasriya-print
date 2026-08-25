@@ -23,7 +23,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
  * An append-only record of a sensitive change.
  *
  * Entries are never edited or deleted - `updatedAt` and `updatedBy` always
- * equal their created counterparts, and firestore.rules enforces that.
+ * equal their created counterparts, and there is no update grant on the table.
  *
  * Honest limitation: entries are written by the browser, in the same batch as
  * the change they describe, so the two commit together or not at all. That

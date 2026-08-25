@@ -103,7 +103,7 @@ export const enquiryFormSchema = z
     nextFollowUpAt: z.string().optional(),
     // 'converted' is accepted here only so an already converted enquiry can be
     // round-tripped. The form never offers it, the service refuses to set it,
-    // and firestore.rules only allows it together with a new convertedJobId.
+    // and the conversion RPC is the only thing that may set it.
     status: z.enum(ENQUIRY_STATUSES),
     lostReason: z.string().trim().max(300, 'Reason is too long').optional(),
   })

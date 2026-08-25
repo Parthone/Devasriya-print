@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { ALL_PERMISSIONS, PERMISSIONS, type Permission } from '@/features/permissions/catalogue';
@@ -228,5 +229,43 @@ describe('permission helpers', () => {
     expect(hasAllPermissions(permissions, ['jobs:view', 'jobs:assign'])).toBe(false);
     expect(hasAnyPermission(permissions, ['jobs:assign', 'jobs:view'])).toBe(true);
     expect(hasAnyPermission(permissions, ['billing:view'])).toBe(false);
+  });
+});
+
+describe('the matrix seeded into the database', () => {
+  /**
+   * The SQL copy of the matrix must not drift from this one.
+   *
+   * `matrix.ts` decides what the UI offers; `role_permissions` decides what the
+   * database allows. If the two ever disagree, one of them is a security hole -
+   * so a mismatch is a failing build rather than something to be discovered
+   * later. The migration is generated from this file; this test proves it still
+   * matches.
+   */
+  const migration = readFileSync('supabase/migrations/20260826000006_permissions.sql', 'utf8');
+
+  const seeded = new Map<UserRole, Set<Permission>>();
+  for (const match of migration.matchAll(/\('([a-z]+)','([a-z-]+:[a-z-]+)'\)/g)) {
+    const role = match[1] as UserRole;
+    if (!seeded.has(role)) seeded.set(role, new Set());
+    seeded.get(role)?.add(match[2] as Permission);
+  }
+
+  it.each(USER_ROLES)('grants %s exactly what the TypeScript matrix grants', (role) => {
+    const inSql = [...(seeded.get(role) ?? [])].sort();
+    const inCode = [...resolvePermissions(role)].sort();
+    expect(inSql).toEqual(inCode);
+  });
+
+  it('seeds every role and no unknown ones', () => {
+    expect([...seeded.keys()].sort()).toEqual([...USER_ROLES].sort());
+  });
+
+  it('names only permissions that exist in the catalogue', () => {
+    for (const [role, permissions] of seeded) {
+      for (const permission of permissions) {
+        expect(ALL_PERMISSIONS, `${role}:${permission}`).toContain(permission);
+      }
+    }
   });
 });

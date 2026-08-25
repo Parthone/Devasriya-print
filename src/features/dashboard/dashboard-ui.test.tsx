@@ -546,7 +546,20 @@ describe('first run', () => {
 
 describe('backend warning', () => {
   it('is not shown when the app is configured', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', 'anon-key');
+
     await renderAndSettle('owner');
     expect(screen.queryByText(/not connected to a backend/i)).not.toBeInTheDocument();
+    vi.unstubAllEnvs();
+  });
+
+  it('is shown when there is no project to talk to', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', '');
+    vi.stubEnv('VITE_SUPABASE_ANON_KEY', '');
+
+    await renderAndSettle('owner');
+    expect(screen.getByText(/not connected to a backend/i)).toBeVisible();
+    vi.unstubAllEnvs();
   });
 });

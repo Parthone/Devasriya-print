@@ -11,34 +11,30 @@ import { demoEstimate, demoEstimates, resetDemoStore } from '@/features/demo/dem
 /**
  * Quotations in demo mode.
  *
- * Every Firebase entry point is a spy that must never be called - that is the
+ * Every backend entry point is a spy that must never be called - that is the
  * promise the GitHub demo makes.
  */
-const firebase = vi.hoisted(() => ({
+const backend = vi.hoisted(() => ({
   observeAuthState: vi.fn(),
   signInWithEmail: vi.fn(),
-  getFirebaseAuth: vi.fn(),
-  getDb: vi.fn(),
-  getFirebaseStorage: vi.fn(),
+  getSupabase: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
   ensurePersistence: vi.fn(),
-  observeAuthState: firebase.observeAuthState,
-  signInWithEmail: firebase.signInWithEmail,
+  observeAuthState: backend.observeAuthState,
+  signInWithEmail: backend.signInWithEmail,
   signOutCurrentUser: vi.fn(),
   sendPasswordSetupEmail: vi.fn(),
+  updatePassword: vi.fn(),
   getCurrentIdToken: vi.fn(),
 }));
 
-vi.mock('@/lib/firebase/client', () => ({
-  getFirebaseApp: vi.fn(() => {
-    throw new Error('Firebase must not be initialised in demo mode');
+vi.mock('@/lib/supabase/client', () => ({
+  getSupabase: backend.getSupabase.mockImplementation(() => {
+    throw new Error('Supabase must not be contacted in demo mode');
   }),
-  getFirebaseAuth: firebase.getFirebaseAuth,
-  getDb: firebase.getDb,
-  getFirebaseStorage: firebase.getFirebaseStorage,
-  resetFirebaseForTests: vi.fn(),
+  resetSupabaseForTests: vi.fn(),
 }));
 
 function RoutesRenderer() {
@@ -55,10 +51,10 @@ function renderDemoApp(path: string) {
   );
 }
 
-function expectNoFirebaseCalls() {
-  expect(firebase.observeAuthState).not.toHaveBeenCalled();
-  expect(firebase.getDb).not.toHaveBeenCalled();
-  expect(firebase.getFirebaseStorage).not.toHaveBeenCalled();
+function expectNoBackendCalls() {
+  expect(backend.observeAuthState).not.toHaveBeenCalled();
+  expect(backend.signInWithEmail).not.toHaveBeenCalled();
+  expect(backend.getSupabase).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -74,7 +70,7 @@ afterEach(() => {
 });
 
 describe('demo quotations', () => {
-  it('lists the sample quotations without touching Firebase', async () => {
+  it('lists the sample quotations without touching the backend', async () => {
     renderDemoApp(ROUTES.estimates);
 
     expect(
@@ -83,7 +79,7 @@ describe('demo quotations', () => {
     const table = within(await screen.findByRole('table'));
     expect(table.getByRole('link', { name: 'EST-2627-0001' })).toBeInTheDocument();
     expect(table.getByText('Shreeji Traders Pvt Ltd')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('shows the quotation document with its discount and total', async () => {
@@ -96,7 +92,7 @@ describe('demo quotations', () => {
     expect(quotation.getByText('Repeat customer discount')).toBeInTheDocument();
     expect(quotation.getByText('₹5,500.00')).toBeInTheDocument();
     expect(quotation.getByText(/08AABCU9603R1ZM/)).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('records an approval in memory, keeping who entered it', async () => {
@@ -119,7 +115,7 @@ describe('demo quotations', () => {
     const stored = demoEstimate('demo-estimate-1');
     expect(stored?.decision?.note).toBe('Confirmed on the phone');
     expect(stored?.decision?.byName).toBeTruthy();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('creates a quotation from a priced job, in memory', async () => {
@@ -136,7 +132,7 @@ describe('demo quotations', () => {
     await waitFor(() => {
       expect(demoEstimates()).toHaveLength(before + 1);
     });
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('leaves an existing quotation alone when the job is priced again', async () => {

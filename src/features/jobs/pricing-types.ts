@@ -8,7 +8,7 @@ import { AppError } from '@/types/common';
 /**
  * Pricing for one job, stored as its own document at `jobPricing/{jobId}`.
  *
- * It lives apart from the job on purpose. Firestore has no field level read
+ * It lives apart from the job on purpose. A row level security policy gates a
  * rules, so money kept on the job document would be readable by anyone who may
  * read jobs - including designers and production, who deliberately have no
  * estimates:view. A separate document lets the rules gate the money itself.

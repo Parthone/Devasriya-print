@@ -20,14 +20,14 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 firebase-debug.log*
-firestore-debug.log*
-ui-debug.log*
-database-debug.log*
-pubsub-debug.log*
 
-# Firebase emulator state
+# Firebase Hosting deploy state
 .firebase/
-firebase-export-*/
+
+# Supabase local stack
+supabase/.branches/
+supabase/.temp/
+supabase/logs/
 emulator-data/
 
 # Editor / OS
@@ -41,3 +41,8 @@ Thumbs.db
 coverage/
 *.tsbuildinfo
 .eslintcache
+
+# Secrets. The service role key bypasses every security policy in the database
+# and must never reach the repository.
+*service-account*.json
+supabase-service-role*

@@ -33,7 +33,7 @@ export const USER_ROLE_LABELS: Record<UserRole, string> = {
   viewer: 'Viewer',
 };
 
-/** Roles allowed to manage staff accounts. Mirrored in firestore.rules. */
+/** Roles allowed to manage staff accounts. Mirrored in the RLS policies. */
 export const ADMIN_ROLES: readonly UserRole[] = ['owner', 'admin'];
 
 export function isAdminRole(role: UserRole): boolean {
@@ -41,8 +41,8 @@ export function isAdminRole(role: UserRole): boolean {
 }
 
 /**
- * Firestore profile document at `users/{uid}`. The document id is always the
- * Firebase Auth UID - that link is what the security rules are built on.
+ * The employee profile row at `staff_profiles`. Its primary key is always the
+ * Supabase Auth uid - that link is what the security policies are built on.
  */
 export interface UserProfile extends Entity {
   name: string;
@@ -55,7 +55,7 @@ export interface UserProfile extends Entity {
   isActive: boolean;
 }
 
-/** The Firebase Auth account, independent of the Firestore profile. */
+/** The Supabase Auth account, independent of the profile row. */
 export interface AuthAccount {
   uid: Id;
   email: string | null;
@@ -74,7 +74,7 @@ export interface AuthenticatedUser {
   profile: UserProfile;
 }
 
-/** Why an authenticated Firebase user is still not allowed into the app. */
+/** Why an authenticated user is still not allowed into the app. */
 export type SessionRejectionReason = 'no-profile' | 'inactive';
 
 /**

@@ -4,22 +4,22 @@ Modules are built one at a time and approved before implementation starts. The
 machine-readable copy of this list lives in `src/constants/modules.ts` and drives
 the dashboard roadmap card and the placeholder pages - update both together.
 
-| #   | Module                           | Status        | Notes                                         |
-| --- | -------------------------------- | ------------- | --------------------------------------------- |
-| 0   | Project Foundation               | **Delivered** | Tooling, shell, Firebase layer, design system |
-| 1   | Authentication & Users           | Planned       | Firebase Auth, profiles, protected routes     |
-| 2   | Roles & Permissions              | Planned       | RBAC in the UI and in security rules          |
-| 3   | Customer Management              | Planned       | Customer directory, contacts, GSTIN           |
-| 4   | Enquiries & Jobs                 | Planned       | Enquiry intake, conversion to jobs            |
-| 5   | Measurements & Price Calculation | Planned       | Rate cards, area pricing, taxes               |
-| 6   | Estimates & Quotations           | Planned       | Quotation builder, revisions, approval        |
-| 7   | Design Uploads & Approvals       | Planned       | Storage uploads, proofs, approval trail       |
-| 8   | Department Workflow              | Planned       | Production stages and job movement            |
-| 9   | Employee Assignment              | Planned       | Assignment and workload                       |
-| 10  | Deadlines & Pending Work         | Planned       | Due dates, queues, escalation                 |
-| 11  | Billing & Payments               | Planned       | Invoices, advances, outstanding               |
-| 12  | Inventory & Materials            | Planned       | Stock, consumption, reorder levels            |
-| 13  | Dashboard & Reports              | Planned       | Business summary and reports                  |
+| #   | Module                           | Status        | Notes                                        |
+| --- | -------------------------------- | ------------- | -------------------------------------------- |
+| 0   | Project Foundation               | **Delivered** | Tooling, shell, backend layer, design system |
+| 1   | Authentication & Users           | **Delivered** | Supabase Auth, profiles, protected routes    |
+| 2   | Roles & Permissions              | Planned       | RBAC in the UI and in security rules         |
+| 3   | Customer Management              | Planned       | Customer directory, contacts, GSTIN          |
+| 4   | Enquiries & Jobs                 | Planned       | Enquiry intake, conversion to jobs           |
+| 5   | Measurements & Price Calculation | Planned       | Rate cards, area pricing, taxes              |
+| 6   | Estimates & Quotations           | Planned       | Quotation builder, revisions, approval       |
+| 7   | Design Uploads & Approvals       | Planned       | Storage uploads, proofs, approval trail      |
+| 8   | Department Workflow              | Planned       | Production stages and job movement           |
+| 9   | Employee Assignment              | Planned       | Assignment and workload                      |
+| 10  | Deadlines & Pending Work         | Planned       | Due dates, queues, escalation                |
+| 11  | Billing & Payments               | Planned       | Invoices, advances, outstanding              |
+| 12  | Inventory & Materials            | Planned       | Stock, consumption, reorder levels           |
+| 13  | Dashboard & Reports              | Planned       | Business summary and reports                 |
 
 ## Module 0 - Project Foundation (delivered)
 
@@ -39,18 +39,18 @@ the dashboard roadmap card and the placeholder pages - update both together.
   toasts
 - Navigation lists every planned module, disabled until its module ships
 
-**Firebase integration**
+**Backend integration**
 
-- Lazily-initialised Auth, Firestore (multi-tab offline persistence) and Storage
+- Lazily-initialised Supabase client for Auth, PostgreSQL and Storage
   clients
-- Emulator Suite wiring behind `VITE_USE_FIREBASE_EMULATORS`
-- Deny-all `firestore.rules` and `storage.rules`, plus an empty index file
+- Local stack via the Supabase CLI (`npm run db:start`)
+- Row level security enabled on every table, with the default grants revoked
 - Hosting configuration with SPA rewrite and asset caching headers
-- Firebase errors normalised into `AppError`
+- PostgREST and Auth errors normalised into `AppError`
 
 **Shared foundations**
 
-- `FirestoreRepository`: typed CRUD, cursor pagination, live subscriptions,
+- Typed row mappers per table, plus atomic RPCs for multi-write operations,
   audit fields, soft delete
 - Timestamp / Date converters and a collection path registry
 - Money as integer paise with INR formatting; `en-IN` and `Asia/Kolkata` date
@@ -67,7 +67,7 @@ deployment automation.
 
 **Authentication**
 
-- Firebase email/password sign-in with `browserLocalPersistence`, so a refresh
+- Supabase email/password sign-in with a persisted session, so a refresh
   or a browser restart keeps the user signed in
 - Session restore gated behind a loader, so a signed-in user is never bounced to
   the sign-in screen on refresh
@@ -111,13 +111,13 @@ deployment automation.
 **Tooling**
 
 - `scripts/bootstrap-owner.mjs` creates the first owner with the Admin SDK
-- `scripts/seed-emulator.mjs` seeds emulator accounts for manual testing
-- `npm run test:rules` and `npm run test:emulator` run the emulator suites
+- `scripts/seed-supabase.mjs` seeds local accounts for manual testing
+- `npm run test:integration` runs the row level security and workflow suites
 
 **Known limitation**
 
 Client-side provisioning means email/password sign-up stays enabled on the
-Firebase project, and deactivation cannot disable the Auth account itself. Such
+project, and deactivation does not disable the auth account itself. Such
 accounts have no profile and are rejected by both the application and the rules,
 so they grant no access. A Cloud Function implementation (Blaze plan) closes it.
 
@@ -141,7 +141,7 @@ overrides)` is the only way permissions are derived
 - Sidebar renders only what the user may open
 - `<Can>` / `PermissionGate`, `usePermission`, `usePermissions`,
   `hasPermission` / `hasAllPermissions` / `hasAnyPermission`
-- `firestore.rules` carries a `rolePermissions()` map mirroring the matrix for
+- `public.role_permissions` carries the same matrix as data, seeded from
   the collections that exist, plus privileged-role rules: only the owner may
   create, edit or promote owner and admin records
 
@@ -157,7 +157,7 @@ overrides)` is the only way permissions are derived
 - Written in the same batch as the change; server timestamps only
 - Append-only: rules refuse every update and delete
 - Visible per employee under Employees > View history
-- Composite index for `targetUserId` + `createdAt` in `firestore.indexes.json`
+- Index on `(target_user_id, created_at desc)` for the per-employee trail
 
 **Known limitation**
 
@@ -193,14 +193,14 @@ applies to the account-provisioning limitation from Module 1.
 
 **Data and security**
 
-- `customers` collection; the UI never touches Firestore directly
+- `customers` table; the UI never touches the database directly
 - Rules mirror the matrix exactly: all seven roles may read; owner, admin and
   sales may create and edit; **no role may delete**
 - Field validation in rules: mobile and PIN patterns, known type and language,
   `nameLower` must match the name, no unexpected fields
 - `createdAt` / `createdBy` immutable; every write attributed to the signed-in user
 - No new composite index: the only query is `orderBy(nameLower)`, which
-  Firestore indexes automatically
+  database indexes automatically
 
 **Deliberately excluded**
 
@@ -236,7 +236,7 @@ rules forbid ordinary edits from changing it.
 
 **Conversion**
 
-- One Firestore transaction: allocate the job number, write the job, stamp the
+- One database transaction: allocate the job number, write the job, stamp the
   enquiry as converted with its job id
 - Duplicate conversion refused in the service, in the transaction and in the
   rules, including from a stale copy of the enquiry
@@ -308,12 +308,12 @@ Production stages (Module 8), advanced assignment (9), billing (11).
 
 - See pricing: `estimates:view` - so designer and production do not see money
 - Change pricing: `jobs:edit` **and** `estimates:create` - so production, which
-  holds `jobs:edit`, cannot change a price; enforced in firestore.rules
+  holds `jobs:edit`, cannot change a price; enforced by the policies
 - Manage the rate card: `settings:manage`
 
 **Where pricing is stored**
 
-In its own collection, `jobPricing/{jobId}`, not on the job. Firestore has no
+In its own table, `job_pricing`, not on the job. Columns have no
 field-level read rules, so money on the job document would have been readable by
 anyone holding `jobs:view` - designer and production included. As a separate
 document it is gated properly: reading needs `estimates:view` and writing needs
@@ -334,7 +334,7 @@ priced lines, the subtotal, the adjustment and the total, together with the
 customer name, business name, address and GSTIN as they read that day. Nothing
 is linked back to the job, `jobPricing/{jobId}` or the rate card, so re-pricing
 the job, changing a product rate or editing the customer cannot move a quotation
-that has already been given. Proven end to end against the emulators.
+that has already been given. Proven end to end against a real database.
 
 **The document** (`estimates/{estimateId}`)
 
@@ -355,7 +355,7 @@ that has already been given. Proven end to end against the emulators.
 
 Only a draft may have its wording or validity changed; once a quotation has gone
 out, the answer is a new quotation from the job, not a quiet edit. Refused in
-three places: the buttons offered, the service, and firestore.rules - where each
+three places: the buttons offered, the service, and the policies - where each
 allowed move names exactly the keys it may touch, so no write can carry a
 rewritten price along with a status change.
 
@@ -395,7 +395,7 @@ Module 11. No invoice, payment or PDF-library work was added.
 
 A design version is written once and never rewritten. A revision is a new
 document with the next version number and a new object in Storage, so "this
-artwork was approved" stays a true statement about a specific file. Firestore
+artwork was approved" stays a true statement about a specific file. PostgreSQL
 refuses every change to the file, the version, the job or the customer on an
 existing version, and Storage refuses a second write to a path that already
 holds an object - and refuses every delete.
@@ -459,7 +459,7 @@ wrong language can read their way out.
 
 `designs/{jobId}/{designId}/{attachmentId}.{ext}`, JPG, PNG, WEBP or PDF up to
 25 MB. No download URL is ever persisted: the viewable URL is resolved at run
-time for whoever is signed in, so a link cannot be lifted out of Firestore and
+time for whoever is signed in, so a link cannot be lifted out of the database and
 used by somebody the rules would refuse. Images render inline; PDFs get an open
 action into the browser's own viewer. There is no design editor and no PDF
 library.
@@ -481,3 +481,68 @@ work; it only makes the approved artwork easy to find.
 ## Next: Module 8 - Department Workflow
 
 Scope to be confirmed before implementation.
+
+## Module 8 - Supabase Backend Migration (delivered)
+
+The backend moved from Firebase to Supabase in one module. Firebase Hosting
+stays; Firestore, Firebase Auth and Cloud Storage are gone.
+
+**What made it a 13-file change rather than a rewrite**
+
+The layering rule from Module 0. ESLint forbade the UI from importing the
+Firebase SDK, so the only code that knew what the backend was lived in
+`src/lib/firebase/**`, `src/services/**` and each feature's `services/` folder -
+4,871 of 38,400 lines. Not one component, page, hook, domain type or business
+rule changed. The 500-odd UI and domain tests that mock at the service boundary
+passed without edits, which is how each module was checked as it moved.
+
+**What replaced what**
+
+| Firebase                         | Supabase                                          |
+| -------------------------------- | ------------------------------------------------- |
+| Firestore collection             | PostgreSQL table                                  |
+| Embedded array capped at 50      | Child table (`enquiry_follow_ups`, `*_lines`)     |
+| `firestore.rules` `can(...)`     | `app.has_permission(...)` in a policy             |
+| `touchesOnly([...])`             | `GRANT UPDATE (col, ...)`                         |
+| `allow delete: if false`         | No delete grant, no delete policy                 |
+| Status transition table in rules | `BEFORE UPDATE` trigger + transition table        |
+| `runTransaction` / `writeBatch`  | `SECURITY INVOKER` PL/pgSQL function              |
+| Counter document                 | `document_counters` row + `ON CONFLICT DO UPDATE` |
+| `getDownloadURL()`               | `createSignedUrl(path, 300)`                      |
+| Secondary-app account creation   | `provision-account` Edge Function                 |
+| Emulator rules tests             | Integration tests against a real database         |
+
+**Three things that got better**
+
+- **Signed URLs expire.** A Firebase download URL is effectively a permanent
+  bearer token. The old code worked hard never to persist one; the new one has a
+  five-minute window even if somebody slips.
+- **Column grants are declarative.** `GRANT UPDATE (status, decision_*, ...)`
+  replaces the hand-written `touchesOnly([...])` comparisons that were repeated
+  across the designs and estimates rule blocks. A column that is not granted
+  cannot be written by any statement, any policy, any client.
+- **Public sign-up is off.** The old provisioner needed email/password sign-up
+  enabled on the project - a hole the code documented and could not close.
+  Creating accounts now needs the service role key, which only the Edge Function
+  has, so sign-up is disabled outright.
+
+**One PostgreSQL subtlety worth knowing**
+
+With several permissive policies on one command, `USING` clauses are OR-ed and
+`WITH CHECK` clauses are OR-ed **independently** - a row passes if any `USING`
+matches and any `WITH CHECK` matches, not necessarily the same policy's. So
+every `WITH CHECK` re-asserts who the caller is. Without that, a staff member
+could pass `USING` as staff and `WITH CHECK` as a customer, and file a design
+decision as though the customer had typed it. There is a test for exactly that.
+
+**One behavioural difference**
+
+Firestore _rejects_ a query that its rules cannot satisfy; PostgreSQL _filters_
+it. A customer asking for another customer's designs now gets an empty list
+rather than an error. The security outcome is identical and the tests say so
+explicitly.
+
+**Deliberately excluded**
+
+No data migration tooling. The Firebase data was fictional emulator data;
+`npm run seed:supabase` recreates a richer version in seconds.

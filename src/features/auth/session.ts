@@ -9,9 +9,9 @@ import {
 } from '@/types/auth';
 
 export interface ResolveSessionInput {
-  /** The Firebase Auth account, or null when signed out. */
+  /** The Supabase Auth account, or null when signed out. */
   account: AuthAccount | null;
-  /** The Firestore profile for that account, or null when it is missing. */
+  /** The employee profile for that account, or null when it is missing. */
   profile: UserProfile | null;
   /**
    * The portal account for that uid, when the uid belongs to a customer rather
@@ -22,7 +22,7 @@ export interface ResolveSessionInput {
 }
 
 /**
- * Decides whether an authenticated Firebase user is allowed into the app.
+ * Decides whether an authenticated user is allowed into the app.
  *
  * Pure on purpose: this is the security decision of the whole module, so it is
  * unit tested directly rather than only through the UI. Authentication alone is

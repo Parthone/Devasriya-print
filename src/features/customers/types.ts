@@ -205,7 +205,7 @@ const customerSchema = z.object({
   updatedBy: z.string(),
 });
 
-/** Parses a Firestore document, failing loudly on a malformed record. */
+/** Parses a stored row, failing loudly on a malformed record. */
 export function parseCustomer(data: unknown, id: string): Customer {
   const result = customerSchema.safeParse(data);
   if (!result.success) {

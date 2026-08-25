@@ -11,34 +11,30 @@ import { demoEnquiry, resetDemoStore } from '@/features/demo/demo-store';
 /**
  * Enquiries and jobs in demo mode.
  *
- * Every Firebase entry point is a spy that must never be called - that is the
+ * Every backend entry point is a spy that must never be called - that is the
  * promise the GitHub demo makes.
  */
-const firebase = vi.hoisted(() => ({
+const backend = vi.hoisted(() => ({
   observeAuthState: vi.fn(),
   signInWithEmail: vi.fn(),
-  getFirebaseAuth: vi.fn(),
-  getDb: vi.fn(),
-  getFirebaseStorage: vi.fn(),
+  getSupabase: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
   ensurePersistence: vi.fn(),
-  observeAuthState: firebase.observeAuthState,
-  signInWithEmail: firebase.signInWithEmail,
+  observeAuthState: backend.observeAuthState,
+  signInWithEmail: backend.signInWithEmail,
   signOutCurrentUser: vi.fn(),
   sendPasswordSetupEmail: vi.fn(),
+  updatePassword: vi.fn(),
   getCurrentIdToken: vi.fn(),
 }));
 
-vi.mock('@/lib/firebase/client', () => ({
-  getFirebaseApp: vi.fn(() => {
-    throw new Error('Firebase must not be initialised in demo mode');
+vi.mock('@/lib/supabase/client', () => ({
+  getSupabase: backend.getSupabase.mockImplementation(() => {
+    throw new Error('Supabase must not be contacted in demo mode');
   }),
-  getFirebaseAuth: firebase.getFirebaseAuth,
-  getDb: firebase.getDb,
-  getFirebaseStorage: firebase.getFirebaseStorage,
-  resetFirebaseForTests: vi.fn(),
+  resetSupabaseForTests: vi.fn(),
 }));
 
 function RoutesRenderer() {
@@ -55,10 +51,10 @@ function renderDemoApp(path: string) {
   );
 }
 
-function expectNoFirebaseCalls() {
-  expect(firebase.observeAuthState).not.toHaveBeenCalled();
-  expect(firebase.getDb).not.toHaveBeenCalled();
-  expect(firebase.getFirebaseStorage).not.toHaveBeenCalled();
+function expectNoBackendCalls() {
+  expect(backend.observeAuthState).not.toHaveBeenCalled();
+  expect(backend.signInWithEmail).not.toHaveBeenCalled();
+  expect(backend.getSupabase).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -81,7 +77,7 @@ describe('demo enquiries', () => {
     const table = within(await screen.findByRole('table'));
     expect(table.getByRole('link', { name: 'ENQ-2627-0001' })).toBeInTheDocument();
     expect(table.getByText('Ravi Kumar')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('finds an enquiry by the customer mobile number', async () => {
@@ -104,7 +100,7 @@ describe('demo enquiries', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/Wedding cards, 250 pieces/)).toBeInTheDocument();
     expect(screen.getByText(/shared two paper options/i)).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('records a follow-up in memory', async () => {
@@ -125,7 +121,7 @@ describe('demo enquiries', () => {
       expect(demoEnquiry('demo-enquiry-1')?.followUps.length).toBe(2);
     });
     expect(demoEnquiry('demo-enquiry-1')?.followUps[0]?.note).toBe('Customer confirmed the design');
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });
 
@@ -139,7 +135,7 @@ describe('demo jobs', () => {
     const table = within(await screen.findByRole('table'));
     expect(table.getByRole('link', { name: 'JOB-2627-0001' })).toBeInTheDocument();
     expect(table.getByText('City Branch, Market Road')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('shows a job with its collection details and its enquiry', async () => {
@@ -151,7 +147,7 @@ describe('demo jobs', () => {
     expect(screen.getByText('City Branch, Market Road')).toBeInTheDocument();
     expect(screen.getByText('Sunil Yadav')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'ENQ-2627-0002' })).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('shows a direct job as having no enquiry', async () => {
@@ -183,7 +179,7 @@ describe('demo conversion', () => {
     const converted = demoEnquiry('demo-enquiry-3');
     expect(converted?.status).toBe('converted');
     expect(converted?.convertedJobId).toBeTruthy();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('offers a link to the job instead of converting twice', async () => {
@@ -204,7 +200,7 @@ describe('demo pickup offices', () => {
     ).toBeInTheDocument();
     expect(await screen.findByText('Main Press, Station Road')).toBeInTheDocument();
     expect(screen.getByText('City Branch, Market Road')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('adds an office in memory', async () => {
@@ -221,7 +217,7 @@ describe('demo pickup offices', () => {
     await user.click(within(dialog).getByRole('button', { name: /add office/i }));
 
     expect(await screen.findByText('North Branch')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });
 
@@ -236,12 +232,12 @@ describe('demo session survives navigation', () => {
     expect(
       await screen.findByRole('heading', { name: 'JOB-2627-0001', level: 1 }),
     ).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });
 
 describe('demo dashboard', () => {
-  it('shows real counts from the sample data without touching Firebase', async () => {
+  it('shows real counts from the sample data without touching the backend', async () => {
     renderDemoApp(ROUTES.dashboard);
 
     expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
@@ -257,7 +253,7 @@ describe('demo dashboard', () => {
     expect(screen.getByText('Enquiry pipeline')).toBeInTheDocument();
     expect(screen.getByText('Job overview')).toBeInTheDocument();
     expect(screen.getByText('Upcoming deliveries')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('lists demo jobs with their pickup office in upcoming deliveries', async () => {
@@ -267,7 +263,7 @@ describe('demo dashboard', () => {
     const table = within(await screen.findByRole('table'));
     expect(table.getByText('JOB-2627-0001')).toBeInTheDocument();
     expect(table.getByText('City Branch, Market Road')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('offers the demo owner every quick action', async () => {
@@ -277,14 +273,14 @@ describe('demo dashboard', () => {
     expect(screen.getByRole('link', { name: /add customer/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /add enquiry/i })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /create job/i })).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
-  it('shows no Firebase or emulator wording on the dashboard', async () => {
+  it('shows no backend wording on the dashboard', async () => {
     renderDemoApp(ROUTES.dashboard);
     await screen.findByText('Recent updates');
 
-    expect(document.body.textContent).not.toMatch(/firebase/i);
+    expect(document.body.textContent).not.toMatch(/supabase|postgres/i);
     expect(document.body.textContent).not.toMatch(/emulator/i);
   });
 });
@@ -299,7 +295,7 @@ describe('demo pricing', () => {
     expect(screen.getAllByText('Repeat customer discount').length).toBeGreaterThan(0);
     // Subtotal 5,780 less 280 leaves 5,500.
     expect(screen.getAllByText(/5,500\.00/).length).toBeGreaterThan(0);
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('adds a priced item in memory', async () => {
@@ -320,7 +316,7 @@ describe('demo pricing', () => {
     await waitFor(() => {
       expect(screen.getAllByText(/300\.00/).length).toBeGreaterThan(0);
     });
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('lists the demo rate card for the owner', async () => {
@@ -331,6 +327,6 @@ describe('demo pricing', () => {
     ).toBeInTheDocument();
     expect(await screen.findByText('Aluminium Frame')).toBeInTheDocument();
     expect(screen.getByText('Sunboard (discontinued)')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });

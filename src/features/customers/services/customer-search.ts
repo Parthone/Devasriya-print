@@ -76,7 +76,7 @@ export function filterCustomers(
 /**
  * Filters, then pages, in the browser.
  *
- * Pure and separate from the data access so that moving search to Firestore
+ * Pure and separate from the data access so that moving search into SQL
  * queries later replaces this function without touching the UI.
  */
 export function queryCustomers(

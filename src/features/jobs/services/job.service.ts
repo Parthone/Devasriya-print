@@ -1,5 +1,3 @@
-import { doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
-
 import { isDemoMode } from '@/config/demo';
 import {
   addDemoJob,
@@ -12,17 +10,21 @@ import type {
   ActorSnapshot,
   CustomerSnapshot,
 } from '@/features/enquiries/services/enquiry.service';
-import { parseJob, type Job, type JobInput } from '@/features/jobs/types';
+import type { Job, JobInput } from '@/features/jobs/types';
+import {
+  JOB_COLUMNS,
+  fromAudioAttachment,
+  toJob,
+  toJobRow,
+  type JobRow,
+} from '@/features/jobs/services/job.rows';
 import { financialYearKey } from '@/lib/financial-year';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { COLLECTIONS } from '@/services/base/collections';
-import { allocateNumberInTransaction } from '@/services/base/counters';
-import { FirestoreRepository, orderBy } from '@/services/base/repository';
+import { newId } from '@/lib/ids';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap, unwrapMaybe } from '@/lib/supabase/errors';
+import { TABLES } from '@/services/base/tables';
 import type { AudioAttachment } from '@/types/attachments';
 import { type Id } from '@/types/common';
-
-export const jobRepository = new FirestoreRepository<Job>(COLLECTIONS.jobs, parseJob);
 
 export const JOB_FETCH_CAP = 500;
 
@@ -35,29 +37,38 @@ export interface JobDirectory {
 export async function listJobs(): Promise<JobDirectory> {
   if (isDemoMode()) return { jobs: demoJobs(), capReached: false, cap: JOB_FETCH_CAP };
 
-  const page = await jobRepository.list({
-    constraints: [orderBy('jobDate', 'desc')],
-    pageSize: JOB_FETCH_CAP,
-  });
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.jobs)
+      .select(JOB_COLUMNS)
+      .order('job_date', { ascending: false })
+      .limit(JOB_FETCH_CAP + 1)
+      .returns<JobRow[]>(),
+  );
 
-  if (page.hasMore) {
+  const capReached = rows.length > JOB_FETCH_CAP;
+  if (capReached) {
     console.warn(
       `[jobs] more than ${String(JOB_FETCH_CAP)} jobs exist; the list shows the most recent only.`,
     );
   }
 
-  return { jobs: page.items, capReached: page.hasMore, cap: JOB_FETCH_CAP };
+  return { jobs: rows.slice(0, JOB_FETCH_CAP).map(toJob), capReached, cap: JOB_FETCH_CAP };
 }
 
 export async function findJob(id: Id): Promise<Job | null> {
   if (isDemoMode()) return demoJob(id);
-  return jobRepository.findById(id);
+
+  const row = unwrapMaybe(
+    await getSupabase().from(TABLES.jobs).select(JOB_COLUMNS).eq('id', id).maybeSingle<JobRow>(),
+  );
+  return row ? toJob(row) : null;
 }
 
 /** A new job id, needed before uploading audio to its immutable path. */
 export function newJobId(): Id {
   if (isDemoMode()) return `demo-job-pending-${String(Date.now())}`;
-  return jobRepository.newId();
+  return newId();
 }
 
 export interface CreateJobInput {
@@ -108,28 +119,23 @@ export async function createJob({
   }
 
   try {
-    const jobNumber = await runTransaction(getDb(), async (transaction) => {
-      const number = await allocateNumberInTransaction(transaction, 'jobs', yearKey);
-      transaction.set(doc(getDb(), COLLECTIONS.jobs, id), {
-        ...base,
-        jobNumber: number,
-        createdAt: serverTimestamp(),
-        createdBy: actor.uid,
-        updatedAt: serverTimestamp(),
-        updatedBy: actor.uid,
-      });
-      return number;
-    });
-
-    return {
-      ...base,
-      id,
-      jobNumber,
-      createdAt: now,
-      createdBy: actor.uid,
-      updatedAt: now,
-      updatedBy: actor.uid,
-    };
+    const row = unwrap(
+      await getSupabase()
+        .rpc('create_job', {
+          p_payload: {
+            id,
+            ...toJobRow(input, customer),
+            ...fromAudioAttachment(audio),
+            enquiry_id: null,
+            enquiry_number: null,
+            assigned_to_id: null,
+            assigned_to_name: null,
+          },
+          p_year_key: yearKey,
+        })
+        .single<JobRow>(),
+    );
+    return toJob(row);
   } catch (error) {
     throw toAppError(error);
   }
@@ -150,15 +156,6 @@ export async function updateJob({
   audio,
   actor,
 }: UpdateJobInput): Promise<void> {
-  const changes = {
-    ...input,
-    customerId: customer.id,
-    customerName: customer.name,
-    customerMobile: customer.mobile,
-    internalNotes: input.internalNotes ?? null,
-    ...(audio === undefined ? {} : { requirementAudio: audio }),
-  };
-
   if (isDemoMode()) {
     updateDemoJob(previous.id, {
       ...input,
@@ -172,11 +169,15 @@ export async function updateJob({
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.jobs, previous.id), {
-      ...changes,
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.jobs)
+      .update({
+        ...toJobRow(input, customer),
+        ...(audio === undefined ? {} : fromAudioAttachment(audio)),
+        updated_by: actor.uid,
+      })
+      .eq('id', previous.id);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }
@@ -188,22 +189,25 @@ export async function assignJob(
   assignee: { id: Id; name: string } | null,
   actor: ActorSnapshot,
 ): Promise<void> {
-  const changes = {
-    assignedToId: assignee?.id ?? null,
-    assignedToName: assignee?.name ?? null,
-  };
-
   if (isDemoMode()) {
-    updateDemoJob(jobId, { ...changes, updatedBy: actor.uid });
+    updateDemoJob(jobId, {
+      assignedToId: assignee?.id ?? null,
+      assignedToName: assignee?.name ?? null,
+      updatedBy: actor.uid,
+    });
     return;
   }
 
   try {
-    await updateDoc(doc(getDb(), COLLECTIONS.jobs, jobId), {
-      ...changes,
-      updatedAt: serverTimestamp(),
-      updatedBy: actor.uid,
-    });
+    const { error } = await getSupabase()
+      .from(TABLES.jobs)
+      .update({
+        assigned_to_id: assignee?.id ?? null,
+        assigned_to_name: assignee?.name ?? null,
+        updated_by: actor.uid,
+      })
+      .eq('id', jobId);
+    if (error) throw error;
   } catch (error) {
     throw toAppError(error);
   }

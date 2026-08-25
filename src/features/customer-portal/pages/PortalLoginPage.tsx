@@ -19,7 +19,7 @@ interface LocationState {
 /**
  * Customer sign-in.
  *
- * A separate page from the staff sign-in on purpose. It is the same Firebase
+ * A separate page from the staff sign-in on purpose. It is the same Supabase
  * Auth underneath, but the two are different doors: a customer never sees the
  * staff screen and a staff member is redirected out of this one, so nobody has
  * to work out which kind of account they are holding.
@@ -58,7 +58,7 @@ export function PortalLoginPage() {
     void (async () => {
       try {
         // Demo mode signs the visitor straight in as the sample customer; no
-        // Firebase call is made and the credentials are ignored.
+        // backend call is made and the credentials are ignored.
         await signIn(email, password);
         void navigate(ROUTES.portal, { replace: true });
       } catch {

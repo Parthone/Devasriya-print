@@ -24,7 +24,7 @@ export function AppLayout() {
 
   // The sidebar shows only what this user is allowed to open. Hiding a link is
   // presentation, not security: the same permission is enforced by the route
-  // guard and by firestore.rules.
+  // guard and by a row level security policy.
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
     items: section.items.filter((item) => can(item.permission)),

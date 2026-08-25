@@ -19,17 +19,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
-    // Vendor baseline (React, Router, Query, Radix, Zod) sits around 550 kB
-    // raw / 170 kB gzipped. Raise this only with a deliberate decision.
+    // Vendor baseline (React, Router, Query, Radix, Zod) sits around 620 kB
+    // raw / 190 kB gzipped. Raise this only with a deliberate decision.
     chunkSizeWarningLimit: 700,
     rollupOptions: {
       output: {
-        // The Firebase SDK is large and changes rarely - keeping it in its own
-        // chunk means application deploys do not invalidate it in the browser
-        // cache. Feature code is split per route via lazy imports instead.
+        // The Supabase SDK changes rarely - keeping it in its own chunk means
+        // application deploys do not invalidate it in the browser cache.
+        // Feature code is split per route via lazy imports instead.
         manualChunks(id) {
-          if (id.includes('@firebase') || id.includes('node_modules/firebase/')) {
-            return 'firebase';
+          if (id.includes('@supabase')) {
+            return 'supabase';
           }
           if (id.includes('node_modules')) {
             return 'vendor';
@@ -50,8 +50,8 @@ export default defineConfig({
     hookTimeout: 15_000,
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // Security-rules tests need the Firestore emulator: npm run test:rules
-    exclude: ['src/**/*.rules.test.ts', 'src/**/*.e2e.test.ts', 'node_modules/**', 'dist/**'],
+    // Row level security tests need a real database: npm run test:integration
+    exclude: ['src/**/*.integration.test.ts', 'node_modules/**', 'dist/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

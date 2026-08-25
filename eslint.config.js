@@ -6,7 +6,12 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', '*.tsbuildinfo'] },
+  {
+    // Edge Functions are Deno, not Node: they resolve `jsr:` and `npm:`
+    // specifiers and are type-checked by `supabase functions serve`, not by the
+    // application tsconfig.
+    ignores: ['dist', 'coverage', 'node_modules', '*.tsbuildinfo', 'supabase/functions/**'],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     files: ['**/*.{ts,tsx}'],
@@ -40,9 +45,9 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['firebase/firestore', 'firebase/storage'],
+              group: ['@supabase/supabase-js', '@/lib/supabase/*'],
               message:
-                'Do not use the Firebase SDK directly. Go through src/services (data-access layer).',
+                'Do not use the Supabase SDK directly. Go through src/services (data-access layer).',
             },
           ],
         },
@@ -50,10 +55,16 @@ export default tseslint.config(
     },
   },
   {
-    // The data-access layer is allowed to use the SDK: the Firebase client, the
-    // shared repository, and the service folder inside each feature. UI code
+    // The data-access layer is allowed to use the SDK: the Supabase client, the
+    // shared row mappers, and the service folder inside each feature. UI code
     // (components, pages, hooks) is not.
-    files: ['src/lib/firebase/**/*.ts', 'src/services/**/*.ts', 'src/features/*/services/**/*.ts'],
+    files: [
+      'src/lib/supabase/**/*.ts',
+      'src/services/**/*.ts',
+      'src/features/*/services/**/*.ts',
+      'src/test/integration/**/*.ts',
+      'src/**/*.integration.test.ts',
+    ],
     rules: {
       'no-restricted-imports': 'off',
     },
@@ -77,11 +88,15 @@ export default tseslint.config(
     },
   },
   {
-    // Emulator tests drive Firestore through the SDK on purpose - they verify
-    // the deployed rules, not application behaviour.
-    files: ['**/*.rules.test.ts', '**/*.e2e.test.ts'],
+    // Integration tests drive Supabase through the SDK on purpose - they
+    // verify the deployed policies, not application behaviour, so they have to
+    // reach past the service layer.
+    files: ['**/*.integration.test.ts', 'src/test/integration/**/*.ts'],
     rules: {
       'no-restricted-imports': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
     },
   },
   {

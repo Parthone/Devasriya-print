@@ -10,7 +10,6 @@ export {
   createUserProfile,
   updateUserProfile,
   setUserActive,
-  userProfileRepository,
 } from './user-profile.service';
 export { getUserAccountProvisioner } from './provisioning';
 export type { UserAccountProvisioner } from './provisioning/types';

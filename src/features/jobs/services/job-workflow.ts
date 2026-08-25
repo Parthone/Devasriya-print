@@ -72,10 +72,10 @@ export async function updateJobWithAudio({
 
   const superseded = previous.requirementAudio;
   if (superseded && audio !== undefined && audio?.id !== superseded.id) {
-    // Conversion copies the recording to a job owned path, so anything under
-    // `jobs/` belongs to this job and may go. A path under `enquiries/` would
-    // belong to an enquiry and is never touched from here.
-    const ownedByEnquiry = superseded.storagePath.startsWith('enquiries/');
-    await deleteSupersededAudio(superseded, ownedByEnquiry);
+    // Every recording a job points at is in the job bucket: one recorded here,
+    // or the copy conversion made. Either way it belongs to this job and may
+    // go. The enquiry's own recording is in a different bucket and is never
+    // touched from here - which is exactly why the two are separate.
+    await deleteSupersededAudio(superseded, false, 'jobs');
   }
 }

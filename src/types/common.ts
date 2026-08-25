@@ -3,7 +3,7 @@
  * only genuinely cross-cutting shapes belong here.
  */
 
-/** A Firestore document id. */
+/** A record identifier: a UUID primary key. */
 export type Id = string;
 
 /** Present on every persisted document. Written by the data-access layer. */

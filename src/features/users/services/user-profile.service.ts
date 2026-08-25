@@ -1,7 +1,4 @@
-import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
-
 import { isDemoMode } from '@/config/demo';
-import { buildAuditDocument } from '@/features/audit/services/audit.service';
 import type { AuditActor, AuditEntryDraft } from '@/features/audit/types';
 import {
   addDemoEmployee,
@@ -10,32 +7,38 @@ import {
   recordDemoAuditEvent,
   updateDemoEmployee,
 } from '@/features/demo/demo-store';
-import { parseUserProfile, type EmployeeUpdateInput } from '@/features/users/types';
-import { getDb } from '@/lib/firebase/client';
-import { toAppError } from '@/lib/firebase/errors';
-import { COLLECTIONS } from '@/services/base/collections';
-import { FirestoreRepository, orderBy } from '@/services/base/repository';
+import type { EmployeeUpdateInput } from '@/features/users/types';
+import {
+  STAFF_COLUMNS,
+  toUserProfile,
+  type StaffProfileRow,
+} from '@/features/users/services/user-profile.rows';
+import { getSupabase } from '@/lib/supabase/client';
+import { toAppError, unwrap, unwrapMaybe } from '@/lib/supabase/errors';
+import { TABLES } from '@/services/base/tables';
 import { USER_ROLE_LABELS, type UserProfile } from '@/types/auth';
 import { AppError, type Id } from '@/types/common';
-
-/** Data-access for `users/{uid}`. The document id is the Firebase Auth UID. */
-export const userProfileRepository = new FirestoreRepository<UserProfile>(
-  COLLECTIONS.users,
-  parseUserProfile,
-);
 
 /**
  * Reads the signed-in user profile.
  *
- * A missing document and a rules rejection are both reported as "no profile":
- * from the point of view of the application the account is not provisioned, and
- * the session resolver rejects it either way.
+ * A missing row and a policy refusal are both reported as "no profile": from
+ * the point of view of the application the account is not provisioned, and the
+ * session resolver rejects it either way. This is also what makes a customer
+ * portal uid fall through to the customer account lookup.
  */
 export async function getUserProfile(uid: Id): Promise<UserProfile | null> {
   if (isDemoMode()) return demoEmployee(uid);
 
   try {
-    return await userProfileRepository.findById(uid);
+    const row = unwrapMaybe(
+      await getSupabase()
+        .from(TABLES.staffProfiles)
+        .select(STAFF_COLUMNS)
+        .eq('id', uid)
+        .maybeSingle<StaffProfileRow>(),
+    );
+    return row ? toUserProfile(row) : null;
   } catch (error) {
     const appError = toAppError(error);
     if (appError.code === 'permission-denied' || appError.code === 'not-found') {
@@ -48,11 +51,15 @@ export async function getUserProfile(uid: Id): Promise<UserProfile | null> {
 export async function listUserProfiles(): Promise<UserProfile[]> {
   if (isDemoMode()) return demoEmployees();
 
-  const page = await userProfileRepository.list({
-    constraints: [orderBy('name', 'asc')],
-    pageSize: 200,
-  });
-  return page.items;
+  const rows = unwrap(
+    await getSupabase()
+      .from(TABLES.staffProfiles)
+      .select(STAFF_COLUMNS)
+      .order('name', { ascending: true })
+      .limit(200)
+      .returns<StaffProfileRow[]>(),
+  );
+  return rows.map(toUserProfile);
 }
 
 export interface CreateUserProfileInput extends EmployeeUpdateInput {
@@ -60,24 +67,42 @@ export interface CreateUserProfileInput extends EmployeeUpdateInput {
 }
 
 /**
- * Writes a profile change and its audit entries in one batch.
+ * Writes a profile change and its audit entries in one transaction.
  *
- * Batching is the point: the record and the trail of who changed it commit
+ * Atomicity is the point: the record and the trail of who changed it commit
  * together, so the history can never be missing an entry for a change that did
- * happen.
+ * happen. `save_staff_profile` runs as the caller, so every statement inside it
+ * is still checked by row level security.
  */
-async function commitWithAudit(
-  write: (batch: ReturnType<typeof writeBatch>) => void,
+function auditPayload(drafts: AuditEntryDraft[], actor: AuditActor) {
+  return drafts.map((draft) => ({
+    action: draft.action,
+    target_user_id: draft.targetUserId,
+    target_name: draft.targetName,
+    actor_name: actor.name,
+    before: draft.before,
+    after: draft.after,
+  }));
+}
+
+async function saveProfile(
+  uid: Id,
+  payload: Record<string, unknown>,
+  isNew: boolean,
   drafts: AuditEntryDraft[],
   actor: AuditActor,
-): Promise<void> {
-  const db = getDb();
-  const batch = writeBatch(db);
-  write(batch);
-  for (const draft of drafts) {
-    batch.set(doc(collection(db, COLLECTIONS.auditLogs)), buildAuditDocument(draft, actor));
-  }
-  await batch.commit();
+): Promise<StaffProfileRow> {
+  const { data, error } = await getSupabase()
+    .rpc('save_staff_profile', {
+      p_id: uid,
+      p_payload: payload,
+      p_is_new: isNew,
+      p_audit: auditPayload(drafts, actor),
+    })
+    .single<StaffProfileRow>();
+
+  if (error) throw toAppError(error);
+  return data;
 }
 
 export async function createUserProfile(
@@ -104,17 +129,18 @@ export async function createUserProfile(
   }
 
   try {
-    const db = getDb();
-    await commitWithAudit(
-      (batch) => {
-        batch.set(doc(db, COLLECTIONS.users, uid), {
-          ...input,
-          createdAt: serverTimestamp(),
-          createdBy: actor.uid,
-          updatedAt: serverTimestamp(),
-          updatedBy: actor.uid,
-        });
+    const row = await saveProfile(
+      uid,
+      {
+        name: input.name,
+        email: input.email,
+        mobile: input.mobile,
+        designation: input.designation,
+        department: input.department,
+        role: input.role,
+        is_active: input.isActive,
       },
+      true,
       [
         {
           action: 'employee-created',
@@ -126,16 +152,7 @@ export async function createUserProfile(
       ],
       actor,
     );
-
-    const now = new Date();
-    return {
-      ...input,
-      id: uid,
-      createdAt: now,
-      createdBy: actor.uid,
-      updatedAt: now,
-      updatedBy: actor.uid,
-    };
+    return toUserProfile(row);
   } catch (error) {
     throw toAppError(error);
   }
@@ -207,15 +224,17 @@ export async function updateUserProfile(
   }
 
   try {
-    const db = getDb();
-    await commitWithAudit(
-      (batch) => {
-        batch.update(doc(db, COLLECTIONS.users, uid), {
-          ...changes,
-          updatedAt: serverTimestamp(),
-          updatedBy: actor.uid,
-        });
+    await saveProfile(
+      uid,
+      {
+        name: changes.name,
+        mobile: changes.mobile,
+        designation: changes.designation,
+        department: changes.department,
+        role: changes.role,
+        is_active: changes.isActive,
       },
+      false,
       diffProfile(previous, changes),
       actor,
     );
@@ -252,15 +271,10 @@ export async function setUserActive(
   }
 
   try {
-    const db = getDb();
-    await commitWithAudit(
-      (batch) => {
-        batch.update(doc(db, COLLECTIONS.users, target.id), {
-          isActive,
-          updatedAt: serverTimestamp(),
-          updatedBy: actor.uid,
-        });
-      },
+    await saveProfile(
+      target.id,
+      { is_active: isActive },
+      false,
       [
         {
           action: 'status-changed',
@@ -280,7 +294,7 @@ export async function setUserActive(
 /**
  * Stops an administrator from locking themselves - and possibly the whole
  * business - out of the software. The same restriction exists in
- * firestore.rules, so it holds even if this code is bypassed.
+ * a row level security policy, so it holds even if this code is bypassed.
  */
 function guardSelfChange(
   uid: Id,

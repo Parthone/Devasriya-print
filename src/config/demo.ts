@@ -2,9 +2,9 @@
  * Demo mode.
  *
  * A temporary, build-time switch used only for the public UI demo hosted on
- * GitHub Pages, where there is no Firebase project to talk to. It replaces the
+ * GitHub Pages, where there is no Supabase project to talk to. It replaces the
  * sign-in step with a local demo session and serves small fixed datasets
- * instead of Firestore reads.
+ * instead of database reads.
  *
  * It is deliberately a thin seam:
  *   - no production authentication or data-access code is removed or weakened

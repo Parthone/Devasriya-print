@@ -43,7 +43,7 @@ export const employeeFormSchema = z.object({
 export type EmployeeFormValues = z.infer<typeof employeeFormSchema>;
 export type EmployeeInput = EmployeeFormValues;
 
-/** Editing never changes the email - it is tied to the Firebase Auth account. */
+/** Editing never changes the email - it is tied to the Supabase Auth account. */
 export const employeeUpdateSchema = employeeFormSchema.omit({ email: true });
 export type EmployeeUpdateInput = z.infer<typeof employeeUpdateSchema>;
 
@@ -57,7 +57,7 @@ export function normaliseEmployeeValues(values: EmployeeFormValues): EmployeeInp
   };
 }
 
-/** Shape of a stored profile document, validated at the Firestore boundary. */
+/** Shape of a stored profile row, validated at the data-access boundary. */
 export const userProfileSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -74,7 +74,7 @@ export const userProfileSchema = z.object({
 });
 
 /**
- * Parses a Firestore document into a UserProfile. A malformed document is a
+ * Parses a stored row into a UserProfile. A malformed row is a
  * data-integrity problem, so it fails loudly at the boundary rather than
  * leaking undefined fields into the UI.
  */

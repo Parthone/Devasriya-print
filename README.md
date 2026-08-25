@@ -5,7 +5,7 @@ enquiries, jobs, custom measurements and pricing, estimates, design approvals,
 department-wise production, billing, inventory and reports.
 
 Built as a real commercial application - React + TypeScript on the front end,
-Firebase (Authentication, Cloud Firestore, Cloud Storage, Hosting) on the back
+Supabase (Auth, PostgreSQL, Storage, row level security) on the back
 end, with an architecture that can move to Google Cloud services later.
 
 > **Status: Modules 0-5 complete** - foundation, authentication and employee
@@ -19,49 +19,65 @@ end, with an architecture that can move to Google Cloud services later.
 
 - Node.js 20.19+ (the repo is developed on Node 24 - see `.nvmrc`)
 - npm 10+
-- A Firebase project (for anything beyond the local emulators)
-- `firebase-tools` for emulators and deploys: `npm install -g firebase-tools`
+- A Supabase project (or Docker, for the local stack)
+- `firebase-tools` for hosting deploys: `npm install -g firebase-tools`
 
 ## Getting started
 
 ```bash
 npm install
-cp .env.example .env.local     # then fill in the Firebase values
+cp .env.example .env.local     # then fill in the two Supabase values
 npm run dev
 ```
 
-The app runs at http://localhost:5173. Without Firebase credentials the shell
+The app runs at http://localhost:5173. Without Supabase credentials the shell
 still boots - the dashboard reports the configuration as missing.
 
 ### Environment variables
 
-All configuration comes from `.env.local`, which is git-ignored. Copy the keys
-from `.env.example`; the values are in the Firebase console under
-**Project settings > General > Your apps > Web app > SDK setup and
-configuration**.
+All configuration comes from `.env.local`, which is git-ignored. The values are
+in the Supabase dashboard under **Project Settings > API**.
 
-| Variable                            | Purpose                                |
-| ----------------------------------- | -------------------------------------- |
-| `VITE_FIREBASE_API_KEY`             | Firebase web API key                   |
-| `VITE_FIREBASE_AUTH_DOMAIN`         | Auth domain                            |
-| `VITE_FIREBASE_PROJECT_ID`          | Project id                             |
-| `VITE_FIREBASE_STORAGE_BUCKET`      | Cloud Storage bucket                   |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Sender id                              |
-| `VITE_FIREBASE_APP_ID`              | Web app id                             |
-| `VITE_FIREBASE_MEASUREMENT_ID`      | Optional, Google Analytics             |
-| `VITE_USE_FIREBASE_EMULATORS`       | `true` to use the local Emulator Suite |
+| Variable                 | Purpose                                           |
+| ------------------------ | ------------------------------------------------- |
+| `VITE_SUPABASE_URL`      | Project URL, e.g. `https://xxxx.supabase.co`      |
+| `VITE_SUPABASE_ANON_KEY` | Publishable anon key - safe in the browser bundle |
+| `VITE_DEMO_MODE`         | `true` for the no-backend UI demo                 |
 
-### Local development against the emulators
+**The service role key is not on that list and never will be.** It bypasses
+every row level security policy in the database. It belongs in Edge Function
+secrets and in your own shell when running the seed scripts - never in a
+`VITE_` variable, never in the repository, never in a GitHub Actions build step
+for the frontend. `src/config/env.ts` has no way to read one, and a test asserts
+that.
+
+### Local development against a local Supabase
+
+Needs Docker.
 
 ```bash
-cp .firebaserc.example .firebaserc   # set your project id
-npm run emulators                    # terminal 1 - Auth, Firestore, Storage, UI
-# set VITE_USE_FIREBASE_EMULATORS=true in .env.local
-npm run dev                          # terminal 2
+npm run db:start        # starts Postgres, Auth, Storage and Studio
+npm run db:reset        # applies supabase/migrations/* and the seed
+npm run seed:supabase   # sample accounts and data (needs the service role key)
+npm run dev
 ```
 
-Emulator UI: http://localhost:4000. Ports are defined once in `firebase.json`
-and mirrored in `src/lib/firebase/emulators.ts`.
+Studio: http://127.0.0.1:54323. `supabase status` prints the URL and both keys.
+
+### First owner on a real project
+
+The application refuses anyone without an active staff profile, and only
+somebody holding `employees:manage` can create one. This breaks that loop once:
+
+```bash
+SUPABASE_URL=https://xxxx.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=... \
+npm run bootstrap:owner -- owner@yourbusiness.in "Owner Name" 9876543210
+```
+
+The owner is emailed a link to set their own password. Nobody, including
+whoever runs this, ever learns it. Every account after that is created inside
+the application.
 
 ## Scripts
 
@@ -77,37 +93,31 @@ and mirrored in `src/lib/firebase/emulators.ts`.
 | `npm run test`                    | Vitest, single run                               |
 | `npm run test:watch`              | Vitest in watch mode                             |
 | `npm run test:coverage`           | Vitest with a V8 coverage report                 |
-| `npm run emulators`               | Firebase Emulator Suite                          |
+| `npm run test:integration`        | Row level security and workflow tests            |
+| `npm run db:start` / `db:stop`    | Local Supabase stack (needs Docker)              |
+| `npm run db:reset`                | Re-apply every migration from scratch            |
+| `npm run seed:supabase`           | Sample accounts and data for manual testing      |
+| `npm run bootstrap:owner`         | Create the first owner on a real project         |
+| `npm run deploy:hosting`          | Build and deploy the frontend to Firebase        |
 | `npm run verify`                  | typecheck + lint + format check + tests + build  |
 
-Run `npm run verify` before every commit. `test:rules` and `test:emulator` are
-run separately because they need the emulators (and therefore Java) running.
+Run `npm run verify` before every commit. `test:integration` is run separately
+because it needs a real database - it skips itself with a clear message when
+`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are not set, so `verify` stays
+runnable anywhere.
 
 ## Accounts and sign-in
 
-Devasriya Print is staff-only software: **there is no public sign-up**. Every
-account is created by an owner or administrator from **Employees**
-(`/settings/users`), and each account has a Firestore profile at `users/{uid}`
-keyed to its Firebase Auth UID.
+Devasriya Print is staff-only software: **there is no public sign-up** - it is
+switched off on the project itself (`enable_signup = false`). Every account is
+created by an owner or administrator from **Employees** (`/settings/users`), and
+each has a `staff_profiles` row keyed to its Supabase Auth uid.
 
-Being signed in to Firebase is not enough to be signed in to the application.
-A session is only accepted when the profile document exists **and** its
-`isActive` flag is true; anything else is signed out immediately, on login and
-on session restore alike.
-
-### Creating the first owner
-
-The application can only create staff once an administrator is signed in, so the
-first account is created out of band with the Admin SDK.
-
-```bash
-# Real project - the service-account key is a secret, keep it outside the repo
-set GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
-npm run bootstrap:owner -- --email owner@yourbusiness.in --name "Owner Name" --mobile 9876543210 --project your-project-id
-```
-
-The script prints a password setup link for the owner. Never commit a
-service-account key - keep the file outside the repository entirely.
+Being signed in to Supabase is not enough to be signed in to the application. A
+session is only accepted when the profile row exists **and** `is_active` is
+true; anything else is signed out immediately, on login and on session restore
+alike. The same policies apply in the database, so a rejected account can read
+nothing even if it gets past the browser.
 
 ### Creating employees
 
@@ -115,42 +125,41 @@ An administrator fills in name, email, mobile, designation, department and role.
 The employee then receives an email to set their own password - **the
 administrator never sees or types a staff password**.
 
-Accounts are created client-side through a secondary Firebase app so that the
-administrator stays signed in. One consequence to be aware of: email/password
-sign-up remains enabled on the Firebase project, so an account could in
-principle be created outside this flow. Such an account has no profile document,
-and both the application and the Firestore rules reject it, so it grants access
-to nothing. Moving provisioning to a Cloud Function with the Admin SDK (which
-requires the Blaze plan) removes even that possibility - it means adding one
-implementation of `UserAccountProvisioner` and swapping a single binding in
-`src/features/users/services/provisioning/index.ts`.
+Creating the auth account needs the service role key, which bypasses every
+policy in the database and can never be in the browser. So the browser calls the
+`provision-account` Edge Function, which checks the caller's permission _as the
+caller_ before touching the key, creates the account, and records the uid as a
+staff principal. The profile row itself is written by the client under row level
+security, so the rule that only an owner may hand out `owner` or `admin` stays
+in the policies rather than being duplicated somewhere it could drift.
 
 ### Deactivating an employee
 
-Deactivation sets `isActive: false`. The employee is blocked by the application
-and by the security rules, and is signed out the moment the session is
-re-checked. Their Firebase Auth account still exists (the client SDK cannot
-disable it), so they can still authenticate - and are then rejected with a clear
-message before any data is loaded. Records are never deleted, so history stays
-intact.
+Deactivation sets `is_active = false`. Every policy fails for them from that
+moment, and they are signed out the moment the session is re-checked. The auth
+account still exists, so they can still authenticate - and are then rejected
+with a clear message before any data is loaded. Records are never deleted, so
+history stays intact.
 
-### Testing accounts in the emulators
+### Testing accounts locally
 
 ```bash
-npm run emulators        # terminal 1
-npm run seed:emulator    # terminal 2
-npm run dev              # terminal 3, with VITE_USE_FIREBASE_EMULATORS=true
+npm run db:start && npm run db:reset   # terminal 1
+npm run seed:supabase                  # terminal 2
+npm run dev                            # terminal 3
 ```
 
 | Email                     | Password       | What it exercises                 |
 | ------------------------- | -------------- | --------------------------------- |
 | `owner@devasriya.test`    | `Owner@12345`  | active owner, full access         |
-| `designer@devasriya.test` | `Design@12345` | active staff, no admin area       |
+| `sales@devasriya.test`    | `Sales@12345`  | active sales                      |
+| `designer@devasriya.test` | `Design@12345` | active staff, no money, no admin  |
 | `inactive@devasriya.test` | `Inactive@123` | deactivated account               |
 | `ghost@devasriya.test`    | `Ghost@12345`  | authenticates, but has no profile |
+| `portal@shreeji.test`     | `Portal@12345` | customer portal login             |
 
-Password reset emails are not sent by the emulator - the reset link is printed
-in the emulator console instead.
+Emails from the local stack are caught by Inbucket at
+http://127.0.0.1:54324 rather than being delivered.
 
 ## Roles and permissions
 
@@ -183,7 +192,7 @@ const canAssign = usePermission('jobs:assign');
 
 Hiding UI is presentation, never protection. Every gated action is enforced in
 three places: the sidebar hides it, the route guard blocks direct URLs, and
-`firestore.rules` refuses the write. The rules carry their own copy of the
+a row level security policy refuses the write. The database carries its own copy of the
 matrix (`rolePermissions()`), limited to the collections that exist today; each
 module extends it when it opens its own collection.
 
@@ -193,7 +202,7 @@ module extends it when it opens its own collection.
 2. Grant it in the role matrix.
 3. Add it to the expected table in `matrix.test.ts` - a permission that widens
    access without a deliberate test change fails the build.
-4. Mirror it in `firestore.rules` when the collection it protects exists.
+4. Seed it into `role_permissions` and reference it from the policies.
 
 ### Future configurability
 
@@ -210,7 +219,7 @@ are recorded in the `auditLogs` collection and shown per employee under
 
 Each entry is written in the same batch as the change it describes, so the
 record and its history commit together or not at all. Entries are append-only:
-`firestore.rules` refuses every update and delete, requires the actor to be the
+There is no update or delete grant on `audit_events` for anybody. The policy requires the actor to be the
 signed-in user, and requires server timestamps so entries cannot be back-dated.
 
 **Limitation, stated plainly:** entries are written by the browser, so the trail
@@ -236,7 +245,7 @@ searches and pages in the browser. That gives substring search across name,
 business name, mobile, alternate mobile, email, GSTIN and city - typing "kumar"
 finds "Ravi Kumar", and a number typed with spaces or +91 still matches. If a
 business ever exceeds the cap the screen says so rather than quietly showing a
-partial list, and search can move into Firestore behind
+partial list, and search can move into SQL behind
 `src/features/customers/services/` without the UI changing.
 
 ### Duplicate mobile numbers
@@ -255,13 +264,13 @@ without a data migration.
 
 Each customer document carries a `portalUserId` field, always `null` today. When
 the customer portal is built it can attach an auth account by writing that one
-field. Module 3 never sets or edits it, and `firestore.rules` rejects any
+link. Module 3 never sets or edits it, and the policies reject any
 ordinary customer edit that tries to change it.
 
 ## Demo mode (temporary)
 
 `VITE_DEMO_MODE=true` turns the app into a self-contained UI demo for the
-GitHub Pages build, where there is no Firebase project to talk to.
+GitHub Pages build, where there is no Supabase project to talk to.
 
 ```bash
 VITE_DEMO_MODE=true npm run dev     # or set it in .env.local
@@ -274,8 +283,8 @@ What changes:
 - Clicking it creates a local **Demo Owner** session
   (`demo@devasriya.local`, role Owner) with the full owner permission matrix,
   kept in `sessionStorage` so a refresh keeps the demo going for that tab.
-- Firebase is never contacted: no session restore, no sign-in, no Firestore
-  reads. The Firebase auth provider is not even mounted.
+- Supabase is never contacted: no session restore, no sign-in, no database
+  reads. The Supabase session provider is not even mounted.
 - Screens are served from small fixed datasets - six customers, five employees
   and a couple of audit entries.
 - Add, edit and archive work **in memory** for the current page load, so the
@@ -284,8 +293,8 @@ What changes:
 What does not change:
 
 - With `VITE_DEMO_MODE` unset or `false` the application behaves exactly as
-  before: Firebase sign-in, session restore, profile and active checks,
-  permissions and Firestore-backed data.
+  before: Supabase sign-in, session restore, profile and active checks,
+  permissions and database-backed data.
 - No production authentication or data-access code was removed or weakened.
 - Security rules are untouched. Demo mode is a browser-side build flag; it
   cannot grant access to any real project.
@@ -337,7 +346,7 @@ job recording without gaining any access to enquiry storage.
 
 Converting an enquiry copies the requirement recording to a job-owned path,
 then writes the job, allocates its number and stamps the enquiry as converted in
-**one Firestore transaction**. The copy happens first, so a failed upload means
+**one database transaction**. The copy happens first, so a failed upload means
 nothing was written at all; if the transaction then fails, the orphaned copy is
 discarded. The enquiry recording is never modified or deleted, and replacing it
 later cannot change what the job plays. Either all of it lands or
@@ -441,7 +450,7 @@ an end-to-end test that doubles a rate and checks the old job is untouched.
 ### Where pricing lives
 
 Pricing is **not** on the job document. It is a separate document at
-`jobPricing/{jobId}`, because Firestore has no field-level read rules: money
+its own `job_pricing` table, so a policy can gate it: money
 kept on the job would be readable by anyone who may read jobs, which includes
 designer and production.
 
@@ -557,7 +566,7 @@ sign-in page. A customer who lands on a staff URL is sent back to the portal; a
 staff member who lands on the portal is sent to the dashboard. A customer can
 reach exactly their own orders and their own designs, and the query the portal
 sends is the same condition the database enforces - anything wider is refused by
-Firestore, not merely filtered in the browser.
+the database, not merely filtered in the browser.
 
 Portal logins are created from the customer record. The account is made with a
 throwaway password and the customer is emailed a link to set their own, so
@@ -585,7 +594,7 @@ JPG, PNG, WEBP or PDF, up to 25 MB. Source files (AI, PSD, CDR) are production
 assets rather than review artefacts and are deliberately refused - a reviewer
 cannot open them.
 
-No download URL is ever stored in Firestore. A Storage URL is a bearer token
+No permanent URL is ever stored. A Storage URL is a bearer token
 that would outlive the permission check that produced it, and a design is
 exactly the kind of thing that must not leak to another customer, so the
 viewable URL is resolved at run time for whoever is signed in. Images render
@@ -593,7 +602,7 @@ inline; PDFs open in the browser's own viewer. There is no design editor and no
 PDF library.
 
 Storage refuses a second write to a path that already holds an object, and
-refuses every delete under `designs/`. An upload whose Firestore write then
+refuses every delete in the designs bucket. An upload whose row write then
 fails therefore leaves an unreferenced object behind - a deliberate trade: an
 orphaned file costs storage, a deletable one would cost the guarantee that an
 approval means something.
@@ -614,6 +623,129 @@ the portal writes one document - their own version - and is never given write
 access to the job record, so there is no denormalised field that can drift out
 of step with the decision that set it. Approving a version supersedes any
 earlier approval, so a job never has two.
+
+## Backend architecture
+
+The frontend is a React + TypeScript single page application. **Supabase is the
+whole backend** - PostgreSQL, Auth, Storage and row level security. **Firebase
+is hosting only**: `firebase.json` contains a `hosting` block and nothing else.
+
+    React + Vite  ──►  Firebase Hosting        (static files, production)
+          │
+          └────────►  Supabase                 (Postgres, Auth, Storage, RLS)
+                        └── Edge Function      (account provisioning only)
+
+    GitHub Pages  ──►  the same build with VITE_DEMO_MODE=true, which contacts
+                       no backend at all.
+
+### Where the security lives
+
+In the database, not in the browser. `src/features/permissions/matrix.ts` is the
+source of truth for what the UI offers; the same matrix is seeded into
+`public.role_permissions`, and every policy asks `app.has_permission(...)`. A
+test asserts the two copies are identical, so drift is a failing build rather
+than a security incident.
+
+Three mechanisms work together, and the split matters:
+
+| Question                         | Mechanism                                          |
+| -------------------------------- | -------------------------------------------------- |
+| Which rows may I see or write?   | `CREATE POLICY ... USING / WITH CHECK`             |
+| Which **columns** may ever move? | `GRANT UPDATE (col, ...)`                          |
+| Is this status change legal?     | `BEFORE UPDATE` trigger against a transition table |
+
+The column grants are what make snapshots immutable. The artwork columns on
+`designs` and the priced columns on `estimates` are simply not grantable, so no
+policy, statement or client can move them - a status change cannot smuggle a
+rewritten price alongside it.
+
+One PostgreSQL subtlety the policies are careful about: with several permissive
+policies on one command, `USING` clauses are OR-ed and `WITH CHECK` clauses are
+OR-ed **independently**. So every `WITH CHECK` re-asserts who the caller is
+rather than trusting that the matching `USING` already did. Without that, a
+staff member could pass `USING` as staff and `WITH CHECK` as a customer, and
+file an answer as though the customer had typed it.
+
+### Atomic operations
+
+Seven things have to happen all-or-nothing. Each is a PostgreSQL function, and
+every one is `SECURITY INVOKER` - they run as the caller, so row level security
+is still evaluated on every statement inside them. A `SECURITY DEFINER` function
+would be a hole punched straight through the policy model.
+
+| Function                 | What it makes atomic                                 |
+| ------------------------ | ---------------------------------------------------- |
+| `create_enquiry`         | ENQ number + the enquiry row                         |
+| `add_enquiry_follow_up`  | the note + the status move                           |
+| `create_job`             | JOB number + the job row                             |
+| `convert_enquiry_to_job` | JOB number + the job + stamping the enquiry          |
+| `save_job_pricing`       | the totals + every priced line, replaced wholesale   |
+| `create_estimate`        | EST number + the estimate + the copied line snapshot |
+| `create_design_version`  | version number + the row + superseding the old one   |
+| `record_design_decision` | the answer + standing down an earlier approval       |
+
+The one exception is `app.next_document_number`, which is `SECURITY DEFINER`
+because it touches a counter table no client may see. It is short enough to
+audit at a glance.
+
+### Numbering
+
+`ENQ-2627-0001`, `JOB-2627-0001`, `EST-2627-0001` - prefix, Indian financial
+year, four digits. `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` takes a row
+lock held until the caller's transaction commits, so two people creating at the
+same moment cannot be handed the same number, and a rolled-back insert gives its
+number back. The series stays gapless, which statutory invoice numbering will
+need in Module 11. The financial year is computed in the browser in
+`Asia/Kolkata` and passed in: the database server's timezone is not the
+business's timezone.
+
+### Storage
+
+Three **private** buckets: `enquiry-audio`, `job-audio`, `designs`. Paths are
+`{owner_id}/{attachment_id}.{ext}`, so the first folder segment is the record
+the object belongs to, which is what the policy reads to decide whether the
+customer asking owns that order.
+
+Objects are **write-once**: there is no `UPDATE` policy and no `DELETE` policy on
+any of the three, and uploads pass `upsert: false`. That is what makes "this
+artwork was approved" a claim about a specific file that stays true.
+
+No permanent URL is ever stored. A signed URL is minted when somebody looks at a
+file and expires in five minutes, so it only has to outlive the page that asked
+for it.
+
+The enquiry / job split is a hard boundary, not tidiness: converting an enquiry
+copies the bytes into the job bucket precisely so that seeing jobs never grants
+sight of enquiries.
+
+### Two kinds of principal
+
+An employee has `staff_profiles`; a customer has `customer_accounts`. Both
+primary keys are the Supabase Auth uid, and both carry a composite foreign key
+into `principals(id, kind)` - whose primary key makes "a uid is never both" a
+database guarantee rather than an application check that can race.
+
+A customer holds no role and appears nowhere in `role_permissions`, so
+`app.has_permission(...)` is false for them everywhere. Every door they may pass
+is opened explicitly, by their own customer id.
+
+### Account provisioning
+
+Creating an auth user needs the service role key, and that key bypasses every
+policy in the database - it can never be in the browser bundle. So the browser
+asks the `provision-account` Edge Function, which:
+
+1. verifies the caller from their own access token,
+2. checks their permission **as them**, so the same rules apply as everywhere,
+3. creates the auth user with a password nobody ever sees,
+4. writes the `principals` row that fixes the uid as staff or customer,
+5. emails a link so the person chooses their own password.
+
+It deliberately does **not** write the profile row - the client does that under
+row level security, so the rules about who may create an administrator stay in
+the policies rather than being duplicated where they could drift.
+
+Public sign-up is disabled (`enable_signup = false`). Nobody signs themselves up.
 
 ## Project structure
 
@@ -644,43 +776,62 @@ src/
   layouts/      App shell and auth shell
   i18n/         Translation catalogue and language provider (Module 7)
   lib/          Framework-level helpers
-    firebase/   Firebase client, emulators, converters, error mapping
+    supabase/   Supabase client, row mappers, error mapping
   pages/        Shell-level pages (dashboard, 404, 403)
-  services/     Data-access layer built on Firestore
+  services/     Data-access layer built on the Supabase client
   styles/       Tailwind entry point and design tokens
+  test/         Integration and row level security test harness
   types/        Cross-cutting types
-scripts/        Admin SDK tooling: owner bootstrap, emulator seeding
+scripts/        Owner bootstrap and development seeding
+supabase/
+  migrations/   The schema, policies, RPCs and Storage buckets, in order
+  functions/    Edge Functions (account provisioning)
 docs/           Architecture and module roadmap
 ```
 
 ## Deployment
 
-Firebase Hosting is configured in `firebase.json` (SPA rewrite, hashed assets
-cached for a year, `index.html` never cached).
+Two targets, deliberately split.
+
+**Production frontend - Firebase Hosting.** `firebase.json` holds a `hosting`
+block and nothing else (SPA rewrite, hashed assets cached for a year,
+`index.html` never cached).
 
 ```bash
-npm run build
-npx firebase-tools deploy --only hosting
+npm run deploy:hosting        # build + firebase deploy --only hosting
 ```
 
-Security rules are deployed separately. Everything is denied except the `users`
-collection, which Module 1 opens up:
+`.github/workflows/deploy-hosting.yml` does the same on every push to `main`,
+after `npm run verify`. It needs `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+`FIREBASE_SERVICE_ACCOUNT` and `FIREBASE_PROJECT_ID` as repository secrets.
+
+**Public demo - GitHub Pages.** The same build with `VITE_DEMO_MODE=true`, which
+contacts no backend at all and therefore needs no secrets.
+
+**The backend - Supabase.**
 
 ```bash
-npx firebase-tools deploy --only firestore:rules,storage:rules
+supabase link --project-ref <ref>
+supabase db push                              # schema, policies, RPCs, buckets
+supabase functions deploy provision-account
+supabase secrets set APP_SITE_URL=https://your-domain
 ```
+
+The Edge Function reads `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
+`SUPABASE_SERVICE_ROLE_KEY`, all of which Supabase injects for it. The service
+role key is never set anywhere else.
 
 ## Conventions
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before adding code. The two
 rules that matter most:
 
-1. The UI never imports the Firebase SDK - all data access goes through
+1. The UI never imports the Supabase SDK - all data access goes through
    `src/services`. ESLint enforces this.
 2. Money is stored as integer paise (`src/lib/money.ts`), never as floating
    point rupees.
 3. Route access goes through `ProtectedRoute`; a permission checked in the UI is
-   always matched by a rule in `firestore.rules`.
+   always matched by a row level security policy in the database.
 4. Permissions come from the catalogue - never compare role strings in feature
    code.
 

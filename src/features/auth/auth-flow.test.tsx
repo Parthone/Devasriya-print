@@ -228,7 +228,7 @@ describe('sign in', () => {
     });
   });
 
-  it('validates the form before calling Firebase', async () => {
+  it('validates the form before calling the backend', async () => {
     const user = userEvent.setup({ delay: null });
 
     renderApp('/login');

@@ -60,7 +60,7 @@ export interface DashboardData {
  *
  * These are the same React Query keys the Customers, Enquiries and Jobs screens
  * use, so opening the dashboard first warms those screens and vice versa - no
- * extra Firestore reads, and no separate counting queries. A source is only
+ * extra database reads, and no separate counting queries. A source is only
  * fetched when the signed-in role may read it.
  */
 export function useDashboardData(now: Date = new Date()): DashboardData {

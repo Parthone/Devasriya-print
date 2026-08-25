@@ -14,7 +14,7 @@ import { useMemo } from 'react';
 
 import { PageHeader } from '@/components/common/PageHeader';
 import { Skeleton } from '@/components/ui/skeleton';
-import { parseFirebaseEnv } from '@/config/env';
+import { parseSupabaseEnv } from '@/config/env';
 import { isDemoMode } from '@/config/demo';
 import { ROUTES } from '@/constants/routes';
 import { FirstRunPanel } from '@/features/dashboard/components/FirstRunPanel';
@@ -34,7 +34,7 @@ const UPCOMING_LIMIT = 8;
 
 /** Warns only when the app genuinely cannot reach a backend, and never in demo. */
 function ConfigurationWarning() {
-  if (isDemoMode() || parseFirebaseEnv().ok) return null;
+  if (isDemoMode() || parseSupabaseEnv().ok) return null;
 
   return (
     <p role="alert" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">

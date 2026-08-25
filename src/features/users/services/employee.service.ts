@@ -46,7 +46,7 @@ export async function createEmployee(
     throw new AppError(
       'conflict',
       `The sign-in account for ${input.email} was created but its profile could not be saved. ` +
-        'The account exists without access to any data. Remove it from the Firebase console, ' +
+        'The account exists without access to any data. Remove it from the Supabase dashboard, ' +
         'then add the employee again.',
       error,
     );

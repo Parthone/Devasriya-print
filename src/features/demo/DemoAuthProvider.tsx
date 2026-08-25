@@ -44,7 +44,7 @@ function writeStoredSession(kind: DemoSessionKind | null): void {
  *
  * It satisfies the same context contract, so every screen, guard and permission
  * check works unchanged - the difference is that the session is a local
- * fabricated owner instead of a Firebase account. No Firebase Auth call is made
+ * fabricated owner instead of a real account. No Supabase Auth call is made
  * from here, and none of the real authentication code is loaded into the flow.
  *
  * The session is kept in `sessionStorage`, so a refresh keeps the demo going

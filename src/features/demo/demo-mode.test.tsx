@@ -9,37 +9,35 @@ import { ROUTES } from '@/constants/routes';
 import { resetDemoStore } from '@/features/demo/demo-store';
 
 /**
- * Demo mode: no Firebase, a local owner session, fixed sample data.
+ * Demo mode: no backend at all, a local owner session, fixed sample data.
  *
- * Every Firebase entry point is mocked with a spy that fails the test if it is
- * ever called - that is the guarantee this mode has to make.
+ * Every entry point to Supabase is a spy that fails the test if it is ever
+ * called - that is the guarantee this mode has to make, and it is the reason
+ * the public demo can be served from GitHub Pages with no project behind it.
  */
-const firebase = vi.hoisted(() => ({
+const backend = vi.hoisted(() => ({
   observeAuthState: vi.fn(),
   signInWithEmail: vi.fn(),
   signOutCurrentUser: vi.fn(),
   sendPasswordSetupEmail: vi.fn(),
-  getFirebaseAuth: vi.fn(),
-  getDb: vi.fn(),
+  getSupabase: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
   ensurePersistence: vi.fn(),
-  observeAuthState: firebase.observeAuthState,
-  signInWithEmail: firebase.signInWithEmail,
-  signOutCurrentUser: firebase.signOutCurrentUser,
-  sendPasswordSetupEmail: firebase.sendPasswordSetupEmail,
+  observeAuthState: backend.observeAuthState,
+  signInWithEmail: backend.signInWithEmail,
+  signOutCurrentUser: backend.signOutCurrentUser,
+  sendPasswordSetupEmail: backend.sendPasswordSetupEmail,
+  updatePassword: vi.fn(),
   getCurrentIdToken: vi.fn(),
 }));
 
-vi.mock('@/lib/firebase/client', () => ({
-  getFirebaseApp: vi.fn(() => {
-    throw new Error('Firebase must not be initialised in demo mode');
+vi.mock('@/lib/supabase/client', () => ({
+  getSupabase: backend.getSupabase.mockImplementation(() => {
+    throw new Error('Supabase must not be contacted in demo mode');
   }),
-  getFirebaseAuth: firebase.getFirebaseAuth,
-  getDb: firebase.getDb,
-  getFirebaseStorage: vi.fn(),
-  resetFirebaseForTests: vi.fn(),
+  resetSupabaseForTests: vi.fn(),
 }));
 
 function RoutesRenderer() {
@@ -63,11 +61,10 @@ async function enterDemo() {
   return user;
 }
 
-function expectNoFirebaseCalls() {
-  expect(firebase.observeAuthState).not.toHaveBeenCalled();
-  expect(firebase.signInWithEmail).not.toHaveBeenCalled();
-  expect(firebase.getFirebaseAuth).not.toHaveBeenCalled();
-  expect(firebase.getDb).not.toHaveBeenCalled();
+function expectNoBackendCalls() {
+  expect(backend.observeAuthState).not.toHaveBeenCalled();
+  expect(backend.signInWithEmail).not.toHaveBeenCalled();
+  expect(backend.getSupabase).not.toHaveBeenCalled();
 }
 
 beforeEach(() => {
@@ -96,19 +93,19 @@ describe('sign-in screen in demo mode', () => {
     expect(screen.queryByRole('button', { name: /forgot password/i })).not.toBeInTheDocument();
   });
 
-  it('shows nothing technical about Firebase or emulators', async () => {
+  it('shows nothing technical about the backend', async () => {
     renderDemoApp();
     await screen.findByRole('button', { name: 'Enter Demo' });
 
-    expect(document.body.textContent).not.toMatch(/firebase/i);
+    expect(document.body.textContent).not.toMatch(/supabase|postgres/i);
     expect(document.body.textContent).not.toMatch(/emulator/i);
   });
 
-  it('lands on the dashboard without touching Firebase', async () => {
+  it('lands on the dashboard without touching the backend', async () => {
     await enterDemo();
 
     expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });
 
@@ -134,7 +131,7 @@ describe('the demo session', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dashboard', level: 1 })).toBeInTheDocument();
     expect(screen.getByText('Demo Owner')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('signs out back to the demo screen', async () => {
@@ -145,7 +142,7 @@ describe('the demo session', () => {
     await user.click(await screen.findByRole('menuitem', { name: /sign out/i }));
 
     expect(await screen.findByRole('button', { name: 'Enter Demo' })).toBeInTheDocument();
-    expect(firebase.signOutCurrentUser).not.toHaveBeenCalled();
+    expect(backend.signOutCurrentUser).not.toHaveBeenCalled();
   });
 
   it('keeps protected routes protected before entering the demo', async () => {
@@ -170,7 +167,7 @@ describe('demo data', () => {
     const table = within(await screen.findByRole('table'));
     expect(table.getByRole('link', { name: 'Ravi Kumar' })).toBeInTheDocument();
     expect(table.getByRole('link', { name: 'Shreeji Traders' })).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('opens a customer detail page', async () => {
@@ -182,7 +179,7 @@ describe('demo data', () => {
       await screen.findByRole('heading', { name: 'Shreeji Traders', level: 1 }),
     ).toBeInTheDocument();
     expect(screen.getByText('08AABCU9603R1ZM')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('shows the employee directory with sample staff', async () => {
@@ -193,7 +190,7 @@ describe('demo data', () => {
     expect(await screen.findByRole('heading', { name: 'Employees', level: 1 })).toBeInTheDocument();
     expect(await screen.findByText('Anita Verma')).toBeInTheDocument();
     expect(screen.getByText('Imran Sheikh')).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('shows the roles and permissions reference', async () => {
@@ -204,7 +201,7 @@ describe('demo data', () => {
     expect(
       await screen.findByRole('heading', { name: 'Roles & Permissions', level: 1 }),
     ).toBeInTheDocument();
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 
   it('adds a customer in memory for the current session', async () => {
@@ -226,14 +223,14 @@ describe('demo data', () => {
     await waitFor(() => {
       expect(screen.getAllByText('Demo Added Customer').length).toBeGreaterThan(0);
     });
-    expectNoFirebaseCalls();
+    expectNoBackendCalls();
   });
 });
 
 describe('with demo mode off', () => {
-  it('restores the normal Firebase sign-in screen', async () => {
+  it('restores the normal credential sign-in screen', async () => {
     vi.stubEnv('VITE_DEMO_MODE', 'false');
-    firebase.observeAuthState.mockImplementation((listener: (account: null) => void) => {
+    backend.observeAuthState.mockImplementation((listener: (account: null) => void) => {
       listener(null);
       return () => undefined;
     });
@@ -246,14 +243,14 @@ describe('with demo mode off', () => {
     expect(screen.queryByRole('button', { name: 'Enter Demo' })).not.toBeInTheDocument();
     expect(screen.queryByText('Demo Mode')).not.toBeInTheDocument();
 
-    // The real provider is mounted and listening to Firebase again.
-    expect(firebase.observeAuthState).toHaveBeenCalled();
+    // The real provider is mounted and listening to Supabase again.
+    expect(backend.observeAuthState).toHaveBeenCalled();
   });
 
-  it('uses the Firebase provisioner rather than the demo one', async () => {
+  it('uses the Edge Function provisioner rather than the demo one', async () => {
     vi.stubEnv('VITE_DEMO_MODE', 'false');
     const { getUserAccountProvisioner } = await import('@/features/users/services/provisioning');
-    expect(getUserAccountProvisioner().name).toBe('secondary-app');
+    expect(getUserAccountProvisioner().name).toBe('edge-function');
 
     vi.stubEnv('VITE_DEMO_MODE', 'true');
     expect(getUserAccountProvisioner().name).toBe('demo');

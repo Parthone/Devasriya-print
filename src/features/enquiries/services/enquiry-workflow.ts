@@ -92,6 +92,6 @@ export async function updateEnquiryWithAudio({
   const superseded = previous.requirementAudio;
   if (superseded && audio !== undefined && audio?.id !== superseded.id) {
     const referencedByJob = Boolean(previous.convertedJobId);
-    await deleteSupersededAudio(superseded, referencedByJob);
+    await deleteSupersededAudio(superseded, referencedByJob, 'enquiries');
   }
 }

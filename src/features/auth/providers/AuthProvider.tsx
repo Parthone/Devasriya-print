@@ -23,7 +23,7 @@ import { AppError } from '@/types/common';
 /**
  * Owns the authentication session.
  *
- * Being signed in to Firebase is not enough to be signed in to Devasriya Print:
+ * Being signed in to Supabase is not enough to be signed in to Devasriya Print:
  * a user must also have a profile document, and it must be active. Any account
  * that fails those checks is signed out immediately - on login and on session
  * restore - and the reason is kept so the sign-in screen can explain it.
