@@ -1,10 +1,13 @@
+import type { Invoice } from '@/features/billing/types';
 import type { Customer } from '@/features/customers/types';
+import { isLowStock, isOutOfStock, type InventoryItem } from '@/features/inventory/types';
 import { ENQUIRY_STATUSES, type Enquiry, type EnquiryStatus } from '@/features/enquiries/types';
 import type { Design } from '@/features/designs/types';
 import type { Estimate } from '@/features/estimates/types';
 import type { ProductionRun } from '@/features/production/types';
 import { JOB_STATUSES, type Job, type JobStatus } from '@/features/jobs/types';
 import { isDueWithin, isOverdue, isToday } from '@/lib/business-day';
+import { addMoney, money, subtractMoney, type Money } from '@/lib/money';
 
 /** Work still in play. Matches the "open" filter on the enquiry directory. */
 const OPEN_ENQUIRY_STATUSES: EnquiryStatus[] = [
@@ -203,4 +206,39 @@ export function summariseProduction(
   }
 
   return { overdue, onHold, unassigned };
+}
+
+export interface BillingSummary {
+  /** Money billed and not yet received, across every open invoice. */
+  outstanding: Money;
+  unpaid: number;
+  partial: number;
+}
+
+export function summariseBilling(invoices: readonly Invoice[]): BillingSummary {
+  let outstanding = money(0);
+  let unpaid = 0;
+  let partial = 0;
+
+  for (const invoice of invoices) {
+    if (invoice.status === 'paid') continue;
+    outstanding = addMoney(outstanding, subtractMoney(invoice.total, invoice.paid));
+    if (invoice.status === 'unpaid') unpaid += 1;
+    else partial += 1;
+  }
+
+  return { outstanding, unpaid, partial };
+}
+
+export interface InventorySummary {
+  /** Materials at or below the minimum somebody set for them. */
+  low: number;
+  outOfStock: number;
+}
+
+export function summariseInventory(items: readonly InventoryItem[]): InventorySummary {
+  return {
+    low: items.filter(isLowStock).length,
+    outOfStock: items.filter(isOutOfStock).length,
+  };
 }

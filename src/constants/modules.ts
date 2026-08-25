@@ -196,7 +196,7 @@ export const MODULES: ModuleDefinition[] = [
     id: 'billing',
     title: 'Billing & Payments',
     description: 'Invoices, advances, part payments and outstanding tracking.',
-    status: 'planned',
+    status: 'done',
     route: ROUTES.billing,
     scope: [
       'Invoice generation from completed jobs',
@@ -210,7 +210,7 @@ export const MODULES: ModuleDefinition[] = [
     id: 'inventory',
     title: 'Inventory & Materials',
     description: 'Material stock, consumption against jobs and reorder levels.',
-    status: 'planned',
+    status: 'done',
     route: ROUTES.inventory,
     scope: [
       'Material master with units and rates',

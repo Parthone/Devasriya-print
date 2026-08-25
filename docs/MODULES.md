@@ -658,3 +658,89 @@ stopped work with the count of unassigned stages.
 
 Attendance, payroll, shifts, capacity planning and notifications. This module
 records who is doing a stage; it does not decide who should be.
+
+## Module 10 - Billing, Payments & Inventory (delivered)
+
+Two ledgers. Both are built the same way: a figure nobody types, kept honest by
+the database against a history nobody can edit.
+
+**The bill is a snapshot**
+
+An invoice copies the priced lines, the totals and the customer details when it
+is raised, inside the database, straight from `job_pricing_lines`. Re-pricing
+the job afterwards cannot move a bill that has already gone to the customer -
+the same guarantee Module 6 gives a quotation. `invoice_lines` has no update or
+delete grant anywhere.
+
+A job may be billed more than once. Part billing is normal, and each invoice
+carries its own number (`INV-2627-0001`, from the same gapless counter as ENQ /
+JOB / EST), its own discount and its own payment history.
+
+**What has been received is never written by a client**
+
+`paid_paise` and `status` carry no update grant, for any role, including the
+owner. They are recomputed from the `payments` table by a trigger, so the only
+way to move them is to record a payment. "The invoice agrees with its payments"
+is true by construction rather than by convention.
+
+**Overpayment is refused twice**
+
+Once in the service, so the message is a useful one, and again in the trigger,
+which takes a row lock on the invoice _before_ it sums. In READ COMMITTED the
+second transaction blocks and then re-reads with a fresh snapshot, so two people
+receiving the same balance at the same moment cannot both be told there was room
+for it.
+
+**Payment history is append-only**
+
+`payments` has `select` and `insert` grants and nothing else. No update, no
+delete, no soft-delete flag to argue about. Who received the money is read from
+the employee record, not trusted from the caller.
+
+A discount can still be corrected while nothing has been received; the total is
+recomputed by a trigger rather than typed. The moment a rupee arrives, the
+discount is frozen - moving it would silently change what the customer owes.
+
+**Stock never goes below zero**
+
+`inventory_items.current_stock` carries no update grant either. A movement
+inserted into `inventory_transactions` fires a trigger that locks the material,
+does the arithmetic, refuses a negative balance, stamps `balance_after` onto the
+movement and updates the item. Every row in the ledger carries the balance it
+left behind, so the running figure can be checked against the history without
+recomputing anything.
+
+A new material always starts empty - the insert trigger forces it - and any
+opening balance is recorded as an ordinary stock-in. The history explains every
+unit that is there.
+
+`inventory_transactions` is `select` and `insert` only. A correction is another
+movement with a reason, never an edit.
+
+**Screens**
+
+Billing (`/billing`) lists invoices with Outstanding / Unpaid / Partly paid /
+Paid filters and free text over invoice number, job, customer and mobile. The
+invoice page shows the bill, what has been received and what is still due, with
+a print-friendly view that reuses the Module 6 print stylesheet and the full
+payment history. Job detail gains a billing summary and the material used on
+that job.
+
+Inventory (`/inventory`) lists materials with a low-stock flag, stock in / out
+against an optional job, and the movement ledger.
+
+**Permissions** - unchanged. `billing:view` (owner, admin, sales, accounts),
+`billing:create` / `billing:edit` (owner, admin, accounts), `inventory:view`
+(everyone but viewer), `inventory:manage` (owner, admin, production). Nothing
+was widened.
+
+**Dashboard**
+
+Outstanding amount and unpaid invoice count gated on `billing:view`; low stock
+gated on `inventory:view` and only shown when something is actually low.
+
+**Deliberately excluded**
+
+GST, accounting software integration, purchase orders, vendors, payroll and
+warehouse management. This module bills a job and tracks a roll of flex; it is
+not an accounting package.

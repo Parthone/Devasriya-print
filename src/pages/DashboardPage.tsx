@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  Boxes,
   CalendarClock,
   ClipboardList,
   AlertTriangle,
@@ -10,7 +11,9 @@ import {
   PauseCircle,
   MessageSquareText,
   PackageCheck,
+  ReceiptText,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -28,6 +31,7 @@ import { RoadmapStatus } from '@/features/dashboard/components/RoadmapStatus';
 import { StatusBreakdown, type StatusRow } from '@/features/dashboard/components/StatusBreakdown';
 import { UpcomingDeliveries } from '@/features/dashboard/components/UpcomingDeliveries';
 import { useDashboardData } from '@/features/dashboard/hooks/use-dashboard-data';
+import { formatMoney } from '@/lib/format';
 import { DUE_SOON_DAYS } from '@/features/dashboard/services/dashboard-metrics';
 import { ENQUIRY_STATUSES, ENQUIRY_STATUS_LABELS } from '@/features/enquiries/types';
 import { JOB_STATUSES, JOB_STATUS_LABELS } from '@/features/jobs/types';
@@ -204,6 +208,45 @@ export function DashboardPage() {
                   to={ROUTES.designs}
                 />
               </>
+            ) : null}
+
+            {data.canSeeBilling ? (
+              <>
+                <KpiCard
+                  label="Outstanding"
+                  value={formatMoney(data.billingSummary.outstanding)}
+                  icon={Wallet}
+                  hint={
+                    data.billingSummary.partial > 0
+                      ? `${String(data.billingSummary.partial)} invoices part paid`
+                      : 'Billed and not yet received'
+                  }
+                  tone={data.billingSummary.outstanding.paise > 0 ? 'warning' : 'default'}
+                  to={ROUTES.billing}
+                />
+                <KpiCard
+                  label="Unpaid invoices"
+                  value={data.billingSummary.unpaid}
+                  icon={ReceiptText}
+                  hint="Nothing received against them yet"
+                  to={ROUTES.billing}
+                />
+              </>
+            ) : null}
+
+            {data.canSeeInventory && data.inventorySummary.low > 0 ? (
+              <KpiCard
+                label="Low stock"
+                value={data.inventorySummary.low}
+                icon={Boxes}
+                hint={
+                  data.inventorySummary.outOfStock > 0
+                    ? `${String(data.inventorySummary.outOfStock)} out of stock`
+                    : 'At or below the minimum'
+                }
+                tone="warning"
+                to={ROUTES.inventory}
+              />
             ) : null}
 
             {data.canSeeEstimates ? (

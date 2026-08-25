@@ -1,5 +1,9 @@
 import { useMemo } from 'react';
 
+import { useInvoiceDirectory } from '@/features/billing/hooks/use-billing';
+import type { Invoice } from '@/features/billing/types';
+import { useInventoryItems } from '@/features/inventory/hooks/use-inventory';
+import type { InventoryItem } from '@/features/inventory/types';
 import { useCustomerDirectory } from '@/features/customers/hooks/use-customers';
 import type { Customer } from '@/features/customers/types';
 import { useEnquiryDirectory } from '@/features/enquiries/hooks/use-enquiries';
@@ -14,16 +18,20 @@ import { useJobDirectory } from '@/features/jobs/hooks/use-jobs';
 import type { Job } from '@/features/jobs/types';
 import { usePermissions } from '@/features/permissions/hooks/use-permissions';
 import {
+  summariseBilling,
   summariseCustomers,
   summariseEnquiries,
+  summariseInventory,
   summariseDesigns,
   summariseEstimates,
   summariseJobs,
   summariseProduction,
+  type BillingSummary,
   type CustomerSummary,
   type EnquirySummary,
   type DesignSummary,
   type EstimateSummary,
+  type InventorySummary,
   type JobSummary,
   type ProductionSummary,
 } from '@/features/dashboard/services/dashboard-metrics';
@@ -40,6 +48,8 @@ export interface DashboardData {
   canSeeEstimates: boolean;
   canSeeDesigns: boolean;
   canSeeProduction: boolean;
+  canSeeBilling: boolean;
+  canSeeInventory: boolean;
 
   customers: Customer[];
   enquiries: Enquiry[];
@@ -47,6 +57,8 @@ export interface DashboardData {
   estimates: Estimate[];
   designs: Design[];
   productionRuns: ProductionRun[];
+  invoices: Invoice[];
+  inventoryItems: InventoryItem[];
 
   customerSummary: CustomerSummary;
   enquirySummary: EnquirySummary;
@@ -54,6 +66,8 @@ export interface DashboardData {
   estimateSummary: EstimateSummary;
   designSummary: DesignSummary;
   productionSummary: ProductionSummary;
+  billingSummary: BillingSummary;
+  inventorySummary: InventorySummary;
   recentUpdates: RecentUpdate[];
 
   isPending: boolean;
@@ -79,6 +93,8 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
   const canSeeEstimates = can('estimates:view');
   const canSeeDesigns = can('designs:view');
   const canSeeProduction = can('production:view');
+  const canSeeBilling = can('billing:view');
+  const canSeeInventory = can('inventory:view');
 
   const customerQuery = useCustomerDirectory({ enabled: canSeeCustomers });
   const enquiryQuery = useEnquiryDirectory({ enabled: canSeeEnquiries });
@@ -86,6 +102,8 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
   const estimateQuery = useEstimateDirectory({ enabled: canSeeEstimates });
   const designQuery = useDesignDirectory({ enabled: canSeeDesigns });
   const productionQuery = useProductionRuns({ enabled: canSeeProduction });
+  const invoiceQuery = useInvoiceDirectory({ enabled: canSeeBilling });
+  const inventoryQuery = useInventoryItems({ enabled: canSeeInventory });
 
   const customers = useMemo(() => customerQuery.data?.customers ?? [], [customerQuery.data]);
   const enquiries = useMemo(() => enquiryQuery.data?.enquiries ?? [], [enquiryQuery.data]);
@@ -93,6 +111,8 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
   const estimates = useMemo(() => estimateQuery.data?.estimates ?? [], [estimateQuery.data]);
   const designs = useMemo(() => designQuery.data?.designs ?? [], [designQuery.data]);
   const productionRuns = useMemo(() => productionQuery.data ?? [], [productionQuery.data]);
+  const invoices = useMemo(() => invoiceQuery.data?.invoices ?? [], [invoiceQuery.data]);
+  const inventoryItems = useMemo(() => inventoryQuery.data ?? [], [inventoryQuery.data]);
 
   const customerSummary = useMemo(() => summariseCustomers(customers), [customers]);
   const enquirySummary = useMemo(() => summariseEnquiries(enquiries, now), [enquiries, now]);
@@ -103,6 +123,8 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
     () => summariseProduction(productionRuns, now),
     [productionRuns, now],
   );
+  const billingSummary = useMemo(() => summariseBilling(invoices), [invoices]);
+  const inventorySummary = useMemo(() => summariseInventory(inventoryItems), [inventoryItems]);
   const recentUpdates = useMemo(
     () => buildRecentUpdates(customers, enquiries, jobs),
     [customers, enquiries, jobs],
@@ -115,6 +137,8 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
     canSeeEstimates ? estimateQuery : null,
     canSeeDesigns ? designQuery : null,
     canSeeProduction ? productionQuery : null,
+    canSeeBilling ? invoiceQuery : null,
+    canSeeInventory ? inventoryQuery : null,
   ].filter((query) => query !== null);
 
   return {
@@ -124,18 +148,24 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
     canSeeEstimates,
     canSeeDesigns,
     canSeeProduction,
+    canSeeBilling,
+    canSeeInventory,
     customers,
     enquiries,
     jobs,
     estimates,
     designs,
     productionRuns,
+    invoices,
+    inventoryItems,
     customerSummary,
     enquirySummary,
     jobSummary,
     estimateSummary,
     designSummary,
     productionSummary,
+    billingSummary,
+    inventorySummary,
     recentUpdates,
     isPending: activeQueries.some((query) => query.isPending),
     isError: activeQueries.some((query) => query.isError),
@@ -147,6 +177,8 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
       jobs.length === 0 &&
       estimates.length === 0 &&
       designs.length === 0 &&
-      productionRuns.length === 0,
+      productionRuns.length === 0 &&
+      invoices.length === 0 &&
+      inventoryItems.length === 0,
   };
 }

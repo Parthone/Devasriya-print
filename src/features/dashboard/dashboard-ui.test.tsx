@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
   listEstimates: vi.fn(),
   listDesigns: vi.fn(),
   listProductionRuns: vi.fn(),
+  listInvoices: vi.fn(),
+  listInventoryItems: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
@@ -112,6 +114,30 @@ vi.mock('@/features/estimates/services/estimate.service', () => ({
   markEstimateSent: vi.fn(),
   recordEstimateDecision: vi.fn(),
   closeEstimate: vi.fn(),
+}));
+
+vi.mock('@/features/billing/services/billing.service', () => ({
+  INVOICE_FETCH_CAP: 500,
+  PAYMENT_FETCH_CAP: 1000,
+  listInvoices: mocks.listInvoices,
+  findInvoice: vi.fn(),
+  listPayments: vi.fn().mockResolvedValue([]),
+  createInvoice: vi.fn(),
+  recordPayment: vi.fn(),
+  updateInvoiceWording: vi.fn(),
+  totalOutstanding: vi.fn(),
+}));
+
+vi.mock('@/features/inventory/services/inventory.service', () => ({
+  ITEM_FETCH_CAP: 500,
+  TRANSACTION_FETCH_CAP: 500,
+  OPENING_STOCK_REASON: 'Opening stock',
+  listInventoryItems: mocks.listInventoryItems,
+  findInventoryItem: vi.fn(),
+  listInventoryTransactions: vi.fn().mockResolvedValue([]),
+  createInventoryItem: vi.fn(),
+  updateInventoryItem: vi.fn(),
+  recordStockMovement: vi.fn(),
 }));
 
 const NOW = new Date();
@@ -306,6 +332,8 @@ beforeEach(() => {
   mocks.listEstimates.mockResolvedValue({ estimates: [], capReached: false, cap: 500 });
   mocks.listDesigns.mockResolvedValue({ designs: [], capReached: false, cap: 500 });
   mocks.listProductionRuns.mockResolvedValue([]);
+  mocks.listInvoices.mockResolvedValue({ invoices: [], capReached: false, cap: 500 });
+  mocks.listInventoryItems.mockResolvedValue([]);
 });
 
 describe('KPI cards', () => {

@@ -26,6 +26,11 @@ export const TABLES = {
   productionRuns: 'production_runs',
   productionTasks: 'production_tasks',
   productionEvents: 'production_events',
+  invoices: 'invoices',
+  invoiceLines: 'invoice_lines',
+  payments: 'payments',
+  inventoryItems: 'inventory_items',
+  inventoryTransactions: 'inventory_transactions',
 } as const;
 
 export type TableName = (typeof TABLES)[keyof typeof TABLES];

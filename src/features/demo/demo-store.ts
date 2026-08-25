@@ -9,9 +9,13 @@ import {
   DEMO_EMPLOYEES,
   DEMO_ENQUIRIES,
   DEMO_ESTIMATES,
+  DEMO_INVENTORY_ITEMS,
+  DEMO_INVENTORY_TRANSACTIONS,
+  DEMO_INVOICES,
   DEMO_JOBS,
   DEMO_JOB_PRICING,
   DEMO_LOCATIONS,
+  DEMO_PAYMENTS,
   DEMO_OWNER_UID,
   DEMO_PRODUCTS,
 } from '@/features/demo/demo-data';
@@ -31,6 +35,13 @@ import {
   type WorkflowStage,
   type WorkflowStageInput,
 } from '@/features/production/types';
+import type { Invoice, Payment } from '@/features/billing/types';
+import type {
+  InventoryItem,
+  InventoryTransaction,
+  StockDirection,
+} from '@/features/inventory/types';
+import type { InventoryItemInput } from '@/features/inventory/services/inventory.service';
 import type { Enquiry } from '@/features/enquiries/types';
 import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
@@ -104,6 +115,10 @@ export function resetDemoStore(): void {
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
   auditEvents = [...DEMO_AUDIT_EVENTS];
+  invoices = [...DEMO_INVOICES];
+  payments = [...DEMO_PAYMENTS];
+  inventoryItems = [...DEMO_INVENTORY_ITEMS];
+  inventoryTransactions = [...DEMO_INVENTORY_TRANSACTIONS];
   sequence = 0;
 }
 
@@ -752,4 +767,196 @@ export function assignDemoTask(
   });
 
   return updated;
+}
+
+// ---------------------------------------------------------------------------
+// Module 10: bills, receipts and materials
+// ---------------------------------------------------------------------------
+
+let invoices: Invoice[] = [...DEMO_INVOICES];
+let payments: Payment[] = [...DEMO_PAYMENTS];
+let inventoryItems: InventoryItem[] = [...DEMO_INVENTORY_ITEMS];
+let inventoryTransactions: InventoryTransaction[] = [...DEMO_INVENTORY_TRANSACTIONS];
+
+export function demoInvoices(): Invoice[] {
+  return [...invoices].sort((a, b) => b.invoiceDate.getTime() - a.invoiceDate.getTime());
+}
+
+export function demoInvoice(id: Id): Invoice | null {
+  return invoices.find((invoice) => invoice.id === id) ?? null;
+}
+
+export function addDemoInvoice(invoice: Omit<Invoice, 'id'>): Invoice {
+  const created: Invoice = { ...invoice, id: nextId('demo-invoice-new') };
+  invoices = [...invoices, created];
+  return created;
+}
+
+export function updateDemoInvoice(id: Id, changes: Partial<Invoice>): void {
+  invoices = invoices.map((invoice) =>
+    invoice.id === id ? { ...invoice, ...changes, updatedAt: new Date() } : invoice,
+  );
+}
+
+/**
+ * Newest first, ties broken by the order they were recorded.
+ *
+ * Two receipts entered in the same second are common, and a ledger that
+ * reorders itself between reads is worse than useless.
+ */
+export function demoPayments(invoiceId: Id): Payment[] {
+  return payments
+    .map((payment, index) => ({ payment, index }))
+    .filter((entry) => entry.payment.invoiceId === invoiceId)
+    .sort((a, b) => b.payment.paidAt.getTime() - a.payment.paidAt.getTime() || b.index - a.index)
+    .map((entry) => entry.payment);
+}
+
+/**
+ * Records a receipt.
+ *
+ * The refusal to take more than the outstanding balance is repeated here so
+ * the demo behaves exactly like the real thing, where the database enforces it.
+ */
+export function addDemoPayment(payment: Omit<Payment, 'id'>): Payment {
+  const invoice = demoInvoice(payment.invoiceId);
+  if (!invoice) {
+    throw new AppError('not-found', 'That invoice is not available.');
+  }
+  if (payment.amount.paise > invoice.total.paise - invoice.paid.paise) {
+    throw new AppError(
+      'invalid-input',
+      'That is more than the balance outstanding on this invoice.',
+    );
+  }
+
+  const created: Payment = { ...payment, id: nextId('demo-payment-new') };
+  payments = [...payments, created];
+  return created;
+}
+
+export function demoInventoryItems(): InventoryItem[] {
+  return [...inventoryItems].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function demoInventoryItem(id: Id): InventoryItem | null {
+  return inventoryItems.find((item) => item.id === id) ?? null;
+}
+
+export function addDemoInventoryItem(input: InventoryItemInput, actorId: Id): InventoryItem {
+  const now = new Date();
+  const created: InventoryItem = {
+    id: nextId('demo-material-new'),
+    name: input.name.trim(),
+    category: input.category,
+    unit: input.unit,
+    // A material always starts empty, exactly as the database forces.
+    currentStock: 0,
+    minimumStock: input.minimumStock,
+    isActive: input.isActive,
+    ...(input.notes?.trim() ? { notes: input.notes.trim() } : {}),
+    createdAt: now,
+    createdBy: actorId,
+    updatedAt: now,
+    updatedBy: actorId,
+  };
+  inventoryItems = [...inventoryItems, created];
+  return created;
+}
+
+export function updateDemoInventoryItem(id: Id, input: InventoryItemInput, actorId: Id): void {
+  inventoryItems = inventoryItems.map((item) =>
+    item.id === id
+      ? {
+          ...item,
+          name: input.name.trim(),
+          category: input.category,
+          unit: input.unit,
+          minimumStock: input.minimumStock,
+          isActive: input.isActive,
+          ...(input.notes?.trim() ? { notes: input.notes.trim() } : { notes: undefined }),
+          updatedAt: new Date(),
+          updatedBy: actorId,
+        }
+      : item,
+  );
+}
+
+/** Newest first, ties broken by the order the movements were recorded. */
+export function demoInventoryTransactions(
+  spec: { itemId?: Id | undefined; jobId?: Id | undefined } = {},
+): InventoryTransaction[] {
+  return inventoryTransactions
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => !spec.itemId || entry.itemId === spec.itemId)
+    .filter(({ entry }) => !spec.jobId || entry.jobId === spec.jobId)
+    .sort((a, b) => b.entry.at.getTime() - a.entry.at.getTime() || b.index - a.index)
+    .map(({ entry }) => entry);
+}
+
+export interface DemoStockMovement {
+  itemId: Id;
+  direction: StockDirection;
+  quantity: number;
+  jobId?: Id | undefined;
+  jobNumber?: string | undefined;
+  reason?: string | undefined;
+  actor: { uid: Id; name: string };
+}
+
+/**
+ * Applies a movement.
+ *
+ * Stock is never allowed below zero here either: the demo has to refuse what
+ * the real system refuses, or it teaches people the wrong thing.
+ */
+export function addDemoStockMovement(input: DemoStockMovement): InventoryTransaction {
+  const item = demoInventoryItem(input.itemId);
+  if (!item) {
+    throw new AppError('not-found', 'That material no longer exists.');
+  }
+  if (!item.isActive) {
+    throw new AppError(
+      'conflict',
+      'That material is no longer in use, so stock cannot be moved against it.',
+    );
+  }
+
+  const balance =
+    input.direction === 'in'
+      ? item.currentStock + input.quantity
+      : item.currentStock - input.quantity;
+
+  if (balance < 0) {
+    throw new AppError(
+      'invalid-input',
+      `There is not enough ${item.name} in stock. Available: ${String(item.currentStock)}.`,
+    );
+  }
+
+  const now = new Date();
+  const created: InventoryTransaction = {
+    id: nextId('demo-stock-new'),
+    itemId: item.id,
+    itemName: item.name,
+    unit: item.unit,
+    direction: input.direction,
+    quantity: input.quantity,
+    balanceAfter: balance,
+    at: now,
+    byId: input.actor.uid,
+    byName: input.actor.name,
+    ...(input.jobId ? { jobId: input.jobId } : {}),
+    ...(input.jobNumber ? { jobNumber: input.jobNumber } : {}),
+    ...(input.reason ? { reason: input.reason } : {}),
+  };
+
+  inventoryTransactions = [...inventoryTransactions, created];
+  inventoryItems = inventoryItems.map((entry) =>
+    entry.id === item.id
+      ? { ...entry, currentStock: balance, updatedAt: now, updatedBy: input.actor.uid }
+      : entry,
+  );
+
+  return created;
 }

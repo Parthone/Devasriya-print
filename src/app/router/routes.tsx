@@ -7,6 +7,9 @@ import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { CustomerDetailPage } from '@/features/customers/pages/CustomerDetailPage';
 import { EnquiriesPage } from '@/features/enquiries/pages/EnquiriesPage';
 import { EnquiryDetailPage } from '@/features/enquiries/pages/EnquiryDetailPage';
+import { BillingPage } from '@/features/billing/pages/BillingPage';
+import { InvoiceDetailPage } from '@/features/billing/pages/InvoiceDetailPage';
+import { InventoryPage } from '@/features/inventory/pages/InventoryPage';
 import { EstimateDetailPage } from '@/features/estimates/pages/EstimateDetailPage';
 import { EstimatesPage } from '@/features/estimates/pages/EstimatesPage';
 import { PortalHomePage } from '@/features/customer-portal/pages/PortalHomePage';
@@ -183,6 +186,30 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['production:view']}>
             <DeadlinesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.billing,
+        element: (
+          <ProtectedRoute requires={['billing:view']}>
+            <BillingPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.invoiceDetail,
+        element: (
+          <ProtectedRoute requires={['billing:view']}>
+            <InvoiceDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.inventory,
+        element: (
+          <ProtectedRoute requires={['inventory:view']}>
+            <InventoryPage />
           </ProtectedRoute>
         ),
       },

@@ -9,7 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ROUTES } from '@/constants/routes';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
+import { JobBillingCard } from '@/features/billing/components/JobBillingCard';
 import { JobEstimatesCard } from '@/features/estimates/components/JobEstimatesCard';
+import { JobMaterialsCard } from '@/features/inventory/components/JobMaterialsCard';
 import { JobDesignsCard } from '@/features/designs/components/JobDesignsCard';
 import { JobProductionCard } from '@/features/production/components/JobProductionCard';
 import { AssignJobDialog } from '@/features/jobs/components/AssignJobDialog';
@@ -247,6 +249,17 @@ export function JobDetailPage() {
           canCreate={can('estimates:create')}
         />
       ) : null}
+
+      {can('billing:view') ? (
+        <JobBillingCard
+          job={job}
+          pricing={pricingQuery.data ?? null}
+          canView
+          canCreate={can('billing:create')}
+        />
+      ) : null}
+
+      <JobMaterialsCard jobId={job.id} canView={can('inventory:view')} />
 
       <JobFormDialog
         open={isEditOpen}

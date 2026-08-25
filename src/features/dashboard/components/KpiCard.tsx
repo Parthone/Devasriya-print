@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 
 interface KpiCardProps {
   label: string;
-  value: number;
+  /** A count, or an already formatted figure such as an amount of money. */
+  value: number | string;
   icon: LucideIcon;
   /** Where the number came from, e.g. "due today or overdue". */
   hint?: string;
@@ -16,7 +17,7 @@ interface KpiCardProps {
 }
 
 export function KpiCard({ label, value, icon: Icon, hint, tone = 'default', to }: KpiCardProps) {
-  const highlight = tone !== 'default' && value > 0;
+  const highlight = tone !== 'default' && (typeof value === 'number' ? value > 0 : true);
 
   const body = (
     <CardContent className="flex items-start justify-between gap-3 py-1">
