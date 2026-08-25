@@ -30,6 +30,11 @@ export function LoginPage() {
     return <Navigate to={ROUTES.dashboard} replace />;
   }
 
+  // A customer who lands on the staff sign-in belongs in the review portal.
+  if (session.status === 'customer') {
+    return <Navigate to={ROUTES.portal} replace />;
+  }
+
   const redirectTo = (location.state as LocationState | null)?.from ?? ROUTES.dashboard;
 
   // Demo mode replaces the credential form entirely: nothing to type, nothing

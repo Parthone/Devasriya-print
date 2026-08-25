@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ROUTES } from '@/constants/routes';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
 import { JobEstimatesCard } from '@/features/estimates/components/JobEstimatesCard';
+import { JobDesignsCard } from '@/features/designs/components/JobDesignsCard';
 import { AssignJobDialog } from '@/features/jobs/components/AssignJobDialog';
 import { JobFormDialog, type JobSubmitPayload } from '@/features/jobs/components/JobFormDialog';
 import { JobPricingCard } from '@/features/jobs/components/JobPricingCard';
@@ -233,6 +234,8 @@ export function JobDetailPage() {
           }}
         />
       ) : null}
+
+      {can('designs:view') ? <JobDesignsCard job={job} /> : null}
 
       {canSeePricing ? (
         <JobEstimatesCard

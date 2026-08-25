@@ -67,3 +67,55 @@ describe('resolveSession', () => {
     expect(session.status === 'authenticated' && session.user.email).toBe('staff@devasriya.test');
   });
 });
+
+describe('customer portal sessions', () => {
+  const account = {
+    id: 'uid-customer',
+    customerId: 'customer-1',
+    customerName: 'Shreeji Traders',
+    email: 'accounts@shreeji.example',
+    preferredLanguage: 'hi' as const,
+    isActive: true,
+    createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    createdBy: 'uid-owner',
+    updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+    updatedBy: 'uid-owner',
+  };
+
+  it('resolves a uid with a portal account into a customer session, not a staff one', () => {
+    const session = resolveSession({
+      account: { uid: 'uid-customer', email: 'accounts@shreeji.example' },
+      profile: null,
+      customerAccount: account,
+    });
+
+    expect(session.status).toBe('customer');
+    if (session.status !== 'customer') throw new Error('expected a customer session');
+    expect(session.customer.customerId).toBe('customer-1');
+    expect(session.customer.preferredLanguage).toBe('hi');
+    // A customer has no role and no permissions at all: there is no shape here
+    // that a staff permission check could accidentally succeed against.
+    expect(session.customer).not.toHaveProperty('permissions');
+    expect(session.customer).not.toHaveProperty('role');
+  });
+
+  it('locks out a customer whose portal access has been revoked', () => {
+    const session = resolveSession({
+      account: { uid: 'uid-customer', email: 'accounts@shreeji.example' },
+      profile: null,
+      customerAccount: { ...account, isActive: false },
+    });
+
+    expect(session).toEqual({ status: 'unauthenticated', rejection: 'inactive' });
+  });
+
+  it('still rejects a uid that is neither an employee nor a customer', () => {
+    const session = resolveSession({
+      account: { uid: 'uid-stranger', email: 'nobody@example.com' },
+      profile: null,
+      customerAccount: null,
+    });
+
+    expect(session).toEqual({ status: 'unauthenticated', rejection: 'no-profile' });
+  });
+});

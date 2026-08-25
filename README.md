@@ -507,6 +507,114 @@ who recorded it and whatever the customer said.
 Module 6 is deliberately tax-neutral. GST belongs to invoicing in Module 11, and
 no placeholder tax fields were added to the quotation.
 
+## Designs and approvals
+
+A job can carry many design versions, and **every version is written once**. A
+revision is a new document with the next version number and a new file in
+Storage; nothing about an existing version can be edited afterwards - not the
+file, not the version number, not the job or customer it belongs to. That is
+what makes "version 2 was approved" a statement that stays true.
+
+Version ids are `{jobId}-v{n}`, so two designers uploading at the same instant
+collide on the create rather than both being handed version 3.
+
+### The life of a design version
+
+    draft                -> submitted for review, superseded
+    submitted for review -> approved, rejected, changes requested, superseded
+    changes requested / approved / rejected -> superseded
+    superseded           -> nothing further
+
+Marking a version superseded moves the status and nothing else: the file, the
+version number and whatever the customer said about it stay exactly as they
+were. A change request is still readable, word for word, long after the revision
+that answered it went out.
+
+### Approve, ask for changes, or reject
+
+The comment box is on screen for **approval too**. "Approved, but please make the
+font bigger" is one of the commonest real answers, and it is an approval and an
+instruction at once - hiding the box behind a rejection would throw the
+instruction away. Rejections and change requests need a comment; approvals do
+not.
+
+Every answer records how it arrived: `source: 'customer'` when the customer
+answered in the portal, `source: 'staff'` when a staff member wrote down what
+they said on the phone. The security rules pin both the source and the identity
+to whoever is actually signed in, so staff cannot file an answer as though the
+customer had typed it, and one customer cannot answer for another.
+
+### The customer review portal
+
+Customers are **not employees with fewer permissions**. An employee has a
+`users/{uid}` profile; a customer has `customerAccounts/{uid}`, holds no role,
+and appears nowhere in the permission matrix - every permission check in the
+rules is false for them. One uid is never both kinds: creating either is refused
+if the other already exists for that uid.
+
+The portal lives at `/portal`, with its own shell, its own guard and its own
+sign-in page. A customer who lands on a staff URL is sent back to the portal; a
+staff member who lands on the portal is sent to the dashboard. A customer can
+reach exactly their own orders and their own designs, and the query the portal
+sends is the same condition the database enforces - anything wider is refused by
+Firestore, not merely filtered in the browser.
+
+Portal logins are created from the customer record. The account is made with a
+throwaway password and the customer is emailed a link to set their own, so
+nobody at the shop ever knows a customer's password. Access is revoked by
+deactivating the account, never by deleting it, so the designs they approved
+keep their name on them.
+
+### Hindi and English
+
+The customer-facing screens are fully bilingual. `src/i18n` holds one flat,
+namespaced catalogue; English defines the key type, so a missing Hindi string is
+a compile error rather than an English sentence appearing on a Hindi screen.
+
+A customer opens the portal in the `preferredLanguage` recorded on their
+customer record, and can switch at any time from the header - an explicit choice
+wins from then on. The two buttons are labelled in their own scripts and never
+translated, so somebody who opened the wrong language can read their way out.
+Uploaded artwork is never translated, only the software around it.
+
+### Design files
+
+    designs/{jobId}/{designId}/{attachmentId}.{ext}
+
+JPG, PNG, WEBP or PDF, up to 25 MB. Source files (AI, PSD, CDR) are production
+assets rather than review artefacts and are deliberately refused - a reviewer
+cannot open them.
+
+No download URL is ever stored in Firestore. A Storage URL is a bearer token
+that would outlive the permission check that produced it, and a design is
+exactly the kind of thing that must not leak to another customer, so the
+viewable URL is resolved at run time for whoever is signed in. Images render
+inline; PDFs open in the browser's own viewer. There is no design editor and no
+PDF library.
+
+Storage refuses a second write to a path that already holds an object, and
+refuses every delete under `designs/`. An upload whose Firestore write then
+fails therefore leaves an unreferenced object behind - a deliberate trade: an
+orphaned file costs storage, a deletable one would cost the guarantee that an
+approval means something.
+
+### Who can do what
+
+- **See designs:** `designs:view` - everyone except accounts.
+- **Upload a version and send it for approval:** `designs:upload` - owner,
+  admin and designer.
+- **Record what the customer said:** `designs:approve` - owner, admin and sales.
+- **Customers** answer their own designs and can do nothing else at all.
+
+### Handing artwork to production
+
+The approved design is the version whose status is `approved`. It is
+deliberately **not** copied onto the job as a pointer: a customer approving from
+the portal writes one document - their own version - and is never given write
+access to the job record, so there is no denormalised field that can drift out
+of step with the decision that set it. Approving a version supersedes any
+earlier approval, so a job never has two.
+
 ## Project structure
 
 ```
@@ -527,11 +635,14 @@ src/
     locations/  Pickup offices and their contact people (Module 4)
     products/   Rate card and the Products & rates screen (Module 5)
     estimates/  Quotations made from a priced job (Module 6)
+    designs/    Design versions, review and approval (Module 7)
+    customer-portal/ Customer logins and the review portal (Module 7)
     demo/       Temporary demo-mode session and sample data
     permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)
   hooks/        Shared React hooks
   layouts/      App shell and auth shell
+  i18n/         Translation catalogue and language provider (Module 7)
   lib/          Framework-level helpers
     firebase/   Firebase client, emulators, converters, error mapping
   pages/        Shell-level pages (dashboard, 404, 403)

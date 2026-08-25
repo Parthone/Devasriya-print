@@ -1,5 +1,7 @@
 import type { AuditEvent } from '@/features/audit/types';
+import type { CustomerAccount } from '@/features/customer-portal/types';
 import type { Customer } from '@/features/customers/types';
+import type { Design } from '@/features/designs/types';
 import type { Enquiry } from '@/features/enquiries/types';
 import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
@@ -652,5 +654,145 @@ export const DEMO_ESTIMATES: Estimate[] = [
     createdBy: DEMO_OWNER_UID,
     updatedAt: stamp(12),
     updatedBy: DEMO_OWNER_UID,
+  },
+];
+
+export const DEMO_CUSTOMER_UID = 'demo-customer-portal';
+
+/**
+ * A fictional portal login, for the customer side of the demo.
+ *
+ * It belongs to Shreeji Traders, who has the hoarding job with designs on it,
+ * so the demo can show both halves of the review conversation.
+ */
+export const DEMO_CUSTOMER_ACCOUNT: CustomerAccount = {
+  id: DEMO_CUSTOMER_UID,
+  customerId: 'demo-customer-2',
+  customerName: 'Shreeji Traders',
+  email: 'accounts@shreejitraders.example',
+  preferredLanguage: 'hi',
+  isActive: true,
+  createdAt: stamp(6),
+  createdBy: DEMO_OWNER_UID,
+  updatedAt: stamp(6),
+  updatedBy: DEMO_OWNER_UID,
+};
+
+const DESIGNER_UID = 'demo-designer';
+
+/**
+ * Three versions of one job's artwork, showing the whole conversation: a first
+ * version the customer sent back for changes, the revision they approved with a
+ * further note, and a fresh draft on another job.
+ */
+export const DEMO_DESIGNS: Design[] = [
+  {
+    id: 'demo-job-1-v1',
+    jobId: 'demo-job-1',
+    jobNumber: 'JOB-2627-0001',
+    jobTitle: 'Diwali sale hoardings',
+    customerId: 'demo-customer-2',
+    customerName: 'Shreeji Traders',
+    version: 1,
+    file: {
+      id: 'demo-design-file-1',
+      storagePath: 'designs/demo-job-1/demo-job-1-v1/demo-design-file-1.png',
+      mimeType: 'image/png',
+      sizeBytes: 842_112,
+      originalFileName: 'diwali-hoarding-v1.png',
+      uploadedAt: stamp(13),
+      uploadedById: DESIGNER_UID,
+    },
+    preview: { kind: 'image', width: 1600, height: 900 },
+    uploadedById: DESIGNER_UID,
+    uploadedByName: 'Kavita Nair',
+    uploadedAt: stamp(13),
+    status: 'superseded',
+    designerNote: 'First layout with the festival theme and the shop logo top right.',
+    decision: {
+      outcome: 'changes-requested',
+      comment: 'Please make the discount percentage much larger and use a deeper red.',
+      decidedAt: stamp(14),
+      source: 'customer',
+      byId: DEMO_CUSTOMER_UID,
+      byName: 'Shreeji Traders',
+      language: 'hi',
+    },
+    submittedAt: stamp(13),
+    supersededAt: stamp(15),
+    createdAt: stamp(13),
+    createdBy: DESIGNER_UID,
+    updatedAt: stamp(15),
+    updatedBy: DESIGNER_UID,
+  },
+  {
+    id: 'demo-job-1-v2',
+    jobId: 'demo-job-1',
+    jobNumber: 'JOB-2627-0001',
+    jobTitle: 'Diwali sale hoardings',
+    customerId: 'demo-customer-2',
+    customerName: 'Shreeji Traders',
+    version: 2,
+    file: {
+      id: 'demo-design-file-2',
+      storagePath: 'designs/demo-job-1/demo-job-1-v2/demo-design-file-2.png',
+      mimeType: 'image/png',
+      sizeBytes: 913_004,
+      originalFileName: 'diwali-hoarding-v2.png',
+      uploadedAt: stamp(15),
+      uploadedById: DESIGNER_UID,
+    },
+    preview: { kind: 'image', width: 1600, height: 900 },
+    uploadedById: DESIGNER_UID,
+    uploadedByName: 'Kavita Nair',
+    uploadedAt: stamp(15),
+    status: 'approved',
+    designerNote: 'Discount now takes the top third, red deepened as asked.',
+    decision: {
+      outcome: 'approved',
+      comment: 'Approved, but please make the phone number a little bigger when printing.',
+      decidedAt: stamp(16),
+      source: 'customer',
+      byId: DEMO_CUSTOMER_UID,
+      byName: 'Shreeji Traders',
+      language: 'hi',
+    },
+    submittedAt: stamp(15),
+    supersededAt: null,
+    createdAt: stamp(15),
+    createdBy: DESIGNER_UID,
+    updatedAt: stamp(16),
+    updatedBy: DEMO_CUSTOMER_UID,
+  },
+  {
+    id: 'demo-job-2-v1',
+    jobId: 'demo-job-2',
+    jobNumber: 'JOB-2627-0002',
+    jobTitle: 'Festival box labels',
+    customerId: 'demo-customer-4',
+    customerName: 'Gupta Sweets',
+    version: 1,
+    file: {
+      id: 'demo-design-file-3',
+      storagePath: 'designs/demo-job-2/demo-job-2-v1/demo-design-file-3.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1_204_880,
+      originalFileName: 'box-label-proof.pdf',
+      uploadedAt: stamp(17),
+      uploadedById: DESIGNER_UID,
+    },
+    preview: { kind: 'pdf', width: null, height: null },
+    uploadedById: DESIGNER_UID,
+    uploadedByName: 'Kavita Nair',
+    uploadedAt: stamp(17),
+    status: 'submitted-for-review',
+    designerNote: 'Proof sheet with all four label sizes on one page.',
+    decision: null,
+    submittedAt: stamp(17),
+    supersededAt: null,
+    createdAt: stamp(17),
+    createdBy: DESIGNER_UID,
+    updatedAt: stamp(17),
+    updatedBy: DESIGNER_UID,
   },
 ];

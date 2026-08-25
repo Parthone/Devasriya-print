@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { LANGUAGE_LABELS } from '@/constants/india';
 import { ROUTES } from '@/constants/routes';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
+import { PortalAccessCard } from '@/features/customer-portal/components/PortalAccessCard';
 import { ArchiveCustomerDialog } from '@/features/customers/components/ArchiveCustomerDialog';
 import { CustomerFormDialog } from '@/features/customers/components/CustomerFormDialog';
 import {
@@ -198,6 +199,8 @@ export function CustomerDetailPage() {
             </dl>
           </CardContent>
         </Card>
+
+        <PortalAccessCard customer={customer} />
       </div>
 
       <CustomerFormDialog

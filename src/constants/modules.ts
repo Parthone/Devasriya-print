@@ -133,14 +133,16 @@ export const MODULES: ModuleDefinition[] = [
     index: 7,
     id: 'designs',
     title: 'Design Uploads & Approvals',
-    description: 'Artwork uploads, proof revisions and customer approval trail.',
-    status: 'planned',
+    description:
+      'Design versions, a customer review portal in Hindi and English, and the approval trail.',
+    status: 'done',
     route: ROUTES.designs,
     scope: [
-      'File uploads to Cloud Storage',
-      'Revision history with previews',
-      'Approval and rejection with remarks',
-      'Locking approved artwork for production',
+      'Immutable design files in Cloud Storage, one per version',
+      'Version history that a revision never overwrites',
+      'Customer review portal with its own login, separate from staff',
+      'Approve, ask for changes or reject - always with a comment',
+      'Hindi and English on every customer-facing screen',
     ],
   },
   {

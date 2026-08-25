@@ -1,5 +1,6 @@
 import type { Customer } from '@/features/customers/types';
 import { ENQUIRY_STATUSES, type Enquiry, type EnquiryStatus } from '@/features/enquiries/types';
+import type { Design } from '@/features/designs/types';
 import type { Estimate } from '@/features/estimates/types';
 import { JOB_STATUSES, type Job, type JobStatus } from '@/features/jobs/types';
 import { isDueWithin, isOverdue, isToday } from '@/lib/business-day';
@@ -145,4 +146,23 @@ export function summariseEstimates(
   }
 
   return { drafts, awaitingApproval, pastValidity };
+}
+
+export interface DesignSummary {
+  /** Sent to a customer and not answered yet. */
+  awaitingCustomer: number;
+  /** Answered with a change request, so a new version is owed. */
+  changesRequested: number;
+}
+
+export function summariseDesigns(designs: readonly Design[]): DesignSummary {
+  let awaitingCustomer = 0;
+  let changesRequested = 0;
+
+  for (const design of designs) {
+    if (design.status === 'submitted-for-review') awaitingCustomer += 1;
+    else if (design.status === 'changes-requested') changesRequested += 1;
+  }
+
+  return { awaitingCustomer, changesRequested };
 }

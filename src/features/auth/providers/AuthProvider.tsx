@@ -8,6 +8,8 @@ import {
   signOutCurrentUser,
 } from '@/features/auth/services/auth.service';
 import { resolveSession } from '@/features/auth/session';
+import { findCustomerAccount } from '@/features/customer-portal/services/customer-account.service';
+import type { CustomerAccount } from '@/features/customer-portal/types';
 import { getUserProfile } from '@/features/users/services/user-profile.service';
 import {
   SESSION_REJECTION_MESSAGES,
@@ -29,6 +31,7 @@ import { AppError } from '@/types/common';
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<AuthAccount | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [customerAccount, setCustomerAccount] = useState<CustomerAccount | null>(null);
   const [rejection, setRejection] = useState<SessionRejectionReason | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
   const isMounted = useRef(true);
@@ -43,8 +46,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const rejectSession = useCallback(async (reason: SessionRejectionReason) => {
     setAccount(null);
     setProfile(null);
+    setCustomerAccount(null);
     setRejection(reason);
     await signOutCurrentUser().catch(() => undefined);
+  }, []);
+
+  /**
+   * Works out what kind of principal a uid is.
+   *
+   * Employees first, because that is the common case and the only one that
+   * costs a read on every sign-in. The portal collection is consulted only when
+   * there is no employee profile at all.
+   */
+  const identify = useCallback(async (uid: string) => {
+    const nextProfile = await getUserProfile(uid).catch(() => null);
+    if (nextProfile) return { profile: nextProfile, customerAccount: null };
+    const nextCustomer = await findCustomerAccount(uid).catch(() => null);
+    return { profile: null, customerAccount: nextCustomer };
   }, []);
 
   useEffect(() => {
@@ -54,17 +72,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (!isMounted.current) return;
           setAccount(null);
           setProfile(null);
+          setCustomerAccount(null);
           setIsRestoring(false);
           return;
         }
 
-        const nextProfile = await getUserProfile(nextAccount.uid).catch(() => null);
+        const identity = await identify(nextAccount.uid);
         if (!isMounted.current) return;
 
-        const session = resolveSession({ account: nextAccount, profile: nextProfile });
+        const session = resolveSession({ account: nextAccount, ...identity });
         if (session.status === 'authenticated') {
           setAccount(nextAccount);
           setProfile(session.user.profile);
+          setCustomerAccount(null);
+          setRejection(null);
+        } else if (session.status === 'customer') {
+          setAccount(nextAccount);
+          setProfile(null);
+          setCustomerAccount(session.customer.account);
           setRejection(null);
         } else if (session.rejection) {
           await rejectSession(session.rejection);
@@ -75,31 +100,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return unsubscribe;
-  }, [rejectSession]);
+  }, [identify, rejectSession]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {
       setRejection(null);
       const nextAccount = await signInWithEmail(email, password);
-      const nextProfile = await getUserProfile(nextAccount.uid).catch(() => null);
-      const session = resolveSession({ account: nextAccount, profile: nextProfile });
+      const identity = await identify(nextAccount.uid);
+      const session = resolveSession({ account: nextAccount, ...identity });
 
-      if (session.status !== 'authenticated') {
+      if (session.status === 'unauthenticated') {
         const reason = session.rejection ?? 'no-profile';
         await rejectSession(reason);
         throw new AppError('permission-denied', SESSION_REJECTION_MESSAGES[reason]);
       }
 
       setAccount(nextAccount);
-      setProfile(session.user.profile);
+      setProfile(session.status === 'authenticated' ? session.user.profile : null);
+      setCustomerAccount(session.status === 'customer' ? session.customer.account : null);
     },
-    [rejectSession],
+    [identify, rejectSession],
   );
 
   const signOut = useCallback(async () => {
     await signOutCurrentUser();
     setAccount(null);
     setProfile(null);
+    setCustomerAccount(null);
     setRejection(null);
   }, []);
 
@@ -109,20 +136,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (!account) return;
-    const nextProfile = await getUserProfile(account.uid).catch(() => null);
-    const session = resolveSession({ account, profile: nextProfile });
+    const identity = await identify(account.uid);
+    const session = resolveSession({ account, ...identity });
     if (session.status === 'authenticated') {
       setProfile(session.user.profile);
+    } else if (session.status === 'customer') {
+      setCustomerAccount(session.customer.account);
     } else if (session.rejection) {
       await rejectSession(session.rejection);
     }
-  }, [account, rejectSession]);
+  }, [account, identify, rejectSession]);
 
   const session = useMemo<SessionState>(() => {
     if (isRestoring) return { status: 'loading' };
-    if (!account || !profile) return { status: 'unauthenticated', rejection };
-    return resolveSession({ account, profile });
-  }, [account, profile, rejection, isRestoring]);
+    if (!account || (!profile && !customerAccount)) {
+      return { status: 'unauthenticated', rejection };
+    }
+    return resolveSession({ account, profile, customerAccount });
+  }, [account, profile, customerAccount, rejection, isRestoring]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ session, signIn, signOut, sendPasswordReset, refreshProfile }),

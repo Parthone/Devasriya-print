@@ -29,3 +29,65 @@ export interface AudioAttachment {
 
 export const MAX_AUDIO_SECONDS = 180;
 export const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
+
+/**
+ * A stored design file.
+ *
+ * Same two rules as `AudioAttachment`: no download URL is ever persisted, and
+ * the path is immutable. A revision writes a new file under a new attachment
+ * id, so an approved version can never be swapped for different artwork.
+ */
+export interface DesignAttachment {
+  /** Unique per file; part of the storage path. */
+  id: Id;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** What the designer called it on their machine, kept for recognisability. */
+  originalFileName: string;
+  uploadedAt: Date;
+  uploadedById: Id;
+}
+
+/** What the review screen can show inline without downloading a viewer. */
+export const DESIGN_PREVIEW_KINDS = ['image', 'pdf'] as const;
+export type DesignPreviewKind = (typeof DESIGN_PREVIEW_KINDS)[number];
+
+export interface DesignPreview {
+  kind: DesignPreviewKind;
+  /** Pixel size, when the browser could measure it. Null for PDFs. */
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * Formats accepted for design review.
+ *
+ * Deliberately short: what a customer can actually look at and approve. Source
+ * files (AI, PSD, CDR) are production assets, not review artefacts, and letting
+ * them through would mean uploading things no reviewer can open.
+ */
+export const DESIGN_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+] as const;
+export type DesignMimeType = (typeof DESIGN_MIME_TYPES)[number];
+
+export const DESIGN_FILE_EXTENSIONS: Record<DesignMimeType, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'application/pdf': 'pdf',
+};
+
+export const MAX_DESIGN_BYTES = 25 * 1024 * 1024;
+
+export function isDesignMimeType(value: string): value is DesignMimeType {
+  return (DESIGN_MIME_TYPES as readonly string[]).includes(value);
+}
+
+export function previewKindFor(mimeType: DesignMimeType): DesignPreviewKind {
+  return mimeType === 'application/pdf' ? 'pdf' : 'image';
+}

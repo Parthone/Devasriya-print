@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   listEnquiries: vi.fn(),
   listJobs: vi.fn(),
   listEstimates: vi.fn(),
+  listDesigns: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
@@ -72,6 +73,18 @@ vi.mock('@/features/jobs/services/job.service', () => ({
   createJob: vi.fn(),
   updateJob: vi.fn(),
   assignJob: vi.fn(),
+}));
+
+vi.mock('@/features/designs/services/design.service', () => ({
+  DESIGN_FETCH_CAP: 500,
+  designRepository: {},
+  listDesigns: mocks.listDesigns,
+  listDesignsForJob: vi.fn().mockResolvedValue([]),
+  listDesignsForCustomer: vi.fn().mockResolvedValue([]),
+  findDesign: vi.fn(),
+  uploadDesign: vi.fn(),
+  submitDesignForReview: vi.fn(),
+  recordDesignDecision: vi.fn(),
 }));
 
 vi.mock('@/features/estimates/services/estimate.service', () => ({
@@ -277,6 +290,7 @@ beforeEach(() => {
   mocks.listEnquiries.mockResolvedValue({ enquiries: ENQUIRIES, capReached: false, cap: 500 });
   mocks.listJobs.mockResolvedValue({ jobs: JOBS, capReached: false, cap: 500 });
   mocks.listEstimates.mockResolvedValue({ estimates: [], capReached: false, cap: 500 });
+  mocks.listDesigns.mockResolvedValue({ designs: [], capReached: false, cap: 500 });
 });
 
 describe('KPI cards', () => {

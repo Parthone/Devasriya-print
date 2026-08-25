@@ -3,7 +3,9 @@ import {
   CalendarClock,
   ClipboardList,
   FileText,
+  Images,
   MailCheck,
+  MessageSquare,
   MessageSquareText,
   PackageCheck,
   Users,
@@ -149,6 +151,27 @@ export function DashboardPage() {
                   value={data.jobSummary.ready}
                   icon={PackageCheck}
                   to={ROUTES.jobs}
+                />
+              </>
+            ) : null}
+
+            {data.canSeeDesigns &&
+            (data.designSummary.awaitingCustomer > 0 || data.designSummary.changesRequested > 0) ? (
+              <>
+                <KpiCard
+                  label="Designs with customers"
+                  value={data.designSummary.awaitingCustomer}
+                  icon={Images}
+                  hint="Sent for approval, no reply yet"
+                  to={ROUTES.designs}
+                />
+                <KpiCard
+                  label="Changes requested"
+                  value={data.designSummary.changesRequested}
+                  icon={MessageSquare}
+                  hint="A new version is owed"
+                  tone="warning"
+                  to={ROUTES.designs}
                 />
               </>
             ) : null}

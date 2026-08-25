@@ -1,5 +1,6 @@
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
 
+import { CustomerRoute } from '@/app/router/CustomerRoute';
 import { ProtectedRoute } from '@/app/router/ProtectedRoute';
 import { NAV_SECTIONS, ROUTES } from '@/constants/routes';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
@@ -8,6 +9,10 @@ import { EnquiriesPage } from '@/features/enquiries/pages/EnquiriesPage';
 import { EnquiryDetailPage } from '@/features/enquiries/pages/EnquiryDetailPage';
 import { EstimateDetailPage } from '@/features/estimates/pages/EstimateDetailPage';
 import { EstimatesPage } from '@/features/estimates/pages/EstimatesPage';
+import { PortalHomePage } from '@/features/customer-portal/pages/PortalHomePage';
+import { PortalLoginPage } from '@/features/customer-portal/pages/PortalLoginPage';
+import { PortalReviewPage } from '@/features/customer-portal/pages/PortalReviewPage';
+import { DesignsPage } from '@/features/designs/pages/DesignsPage';
 import { JobDetailPage } from '@/features/jobs/pages/JobDetailPage';
 import { JobsPage } from '@/features/jobs/pages/JobsPage';
 import { LocationsPage } from '@/features/locations/pages/LocationsPage';
@@ -17,6 +22,7 @@ import { RolesPage } from '@/features/permissions/pages/RolesPage';
 import { UsersPage } from '@/features/users/pages/UsersPage';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AuthLayout } from '@/layouts/AuthLayout';
+import { PortalLayout } from '@/layouts/PortalLayout';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { ForbiddenPage } from '@/pages/ForbiddenPage';
 import { ModuleComingSoonPage } from '@/pages/ModuleComingSoonPage';
@@ -46,6 +52,32 @@ export const routes: RouteObject[] = [
     path: ROUTES.login,
     element: <AuthLayout />,
     children: [{ index: true, element: <LoginPage /> }],
+  },
+  // The customer review portal. A separate shell, a separate guard and a
+  // separate kind of session - it is deliberately not a corner of the staff
+  // application with some things hidden.
+  {
+    path: ROUTES.portal,
+    element: <PortalLayout />,
+    children: [
+      { path: 'login', element: <PortalLoginPage /> },
+      {
+        index: true,
+        element: (
+          <CustomerRoute>
+            <PortalHomePage />
+          </CustomerRoute>
+        ),
+      },
+      {
+        path: 'designs/:designId',
+        element: (
+          <CustomerRoute>
+            <PortalReviewPage />
+          </CustomerRoute>
+        ),
+      },
+    ],
   },
   {
     element: (
@@ -124,6 +156,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['estimates:view']}>
             <EstimateDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.designs,
+        element: (
+          <ProtectedRoute requires={['designs:view']}>
+            <DesignsPage />
           </ProtectedRoute>
         ),
       },

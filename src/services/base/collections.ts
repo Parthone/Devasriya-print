@@ -16,6 +16,8 @@ export const COLLECTIONS = {
   products: 'products',
   jobPricing: 'jobPricing',
   estimates: 'estimates',
+  designs: 'designs',
+  customerAccounts: 'customerAccounts',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -2,24 +2,35 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 import { AuthContext, type AuthContextValue } from '@/features/auth/context/auth-context';
 import { toAuthenticatedUser } from '@/features/auth/session';
-import { DEMO_OWNER_PROFILE, DEMO_OWNER_UID } from '@/features/demo/demo-data';
+import { toCustomerSession } from '@/features/customer-portal/types';
+import {
+  DEMO_CUSTOMER_ACCOUNT,
+  DEMO_OWNER_PROFILE,
+  DEMO_OWNER_UID,
+} from '@/features/demo/demo-data';
 import type { SessionState } from '@/types/auth';
 
 const DEMO_SESSION_KEY = 'devasriya-print.demo-session';
 
-function readStoredSession(): boolean {
+/** Which side of the software the demo visitor is looking at. */
+type DemoSessionKind = 'staff' | 'customer';
+
+function readStoredSession(): DemoSessionKind | null {
   try {
-    return sessionStorage.getItem(DEMO_SESSION_KEY) === 'active';
+    const stored = sessionStorage.getItem(DEMO_SESSION_KEY);
+    if (stored === 'active' || stored === 'staff') return 'staff';
+    if (stored === 'customer') return 'customer';
+    return null;
   } catch {
     // Private mode or storage disabled: the demo simply starts signed out.
-    return false;
+    return null;
   }
 }
 
-function writeStoredSession(active: boolean): void {
+function writeStoredSession(kind: DemoSessionKind | null): void {
   try {
-    if (active) {
-      sessionStorage.setItem(DEMO_SESSION_KEY, 'active');
+    if (kind) {
+      sessionStorage.setItem(DEMO_SESSION_KEY, kind);
     } else {
       sessionStorage.removeItem(DEMO_SESSION_KEY);
     }
@@ -40,22 +51,24 @@ function writeStoredSession(active: boolean): void {
  * for that browser tab and closing it ends the demo.
  */
 export function DemoAuthProvider({ children }: { children: ReactNode }) {
-  const [isActive, setIsActive] = useState<boolean>(readStoredSession);
+  const [kind, setKind] = useState<DemoSessionKind | null>(readStoredSession);
 
-  const enterDemo = useCallback(() => {
-    writeStoredSession(true);
-    setIsActive(true);
+  const enterDemo = useCallback((next: DemoSessionKind = 'staff') => {
+    writeStoredSession(next);
+    setKind(next);
   }, []);
 
+  // The portal sign-in lives at /portal/login, so which kind of demo session to
+  // start can be read straight off the path. Credentials are ignored either
+  // way: demo mode never authenticates anything.
   const signIn = useCallback(async () => {
-    // Credentials are ignored on purpose: demo mode never authenticates.
-    enterDemo();
+    enterDemo(window.location.pathname.includes('/portal') ? 'customer' : 'staff');
     return Promise.resolve();
   }, [enterDemo]);
 
   const signOut = useCallback(async () => {
-    writeStoredSession(false);
-    setIsActive(false);
+    writeStoredSession(null);
+    setKind(null);
     return Promise.resolve();
   }, []);
 
@@ -63,7 +76,13 @@ export function DemoAuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => Promise.resolve(), []);
 
   const session = useMemo<SessionState>(() => {
-    if (!isActive) return { status: 'unauthenticated', rejection: null };
+    if (!kind) return { status: 'unauthenticated', rejection: null };
+    if (kind === 'customer') {
+      return {
+        status: 'customer',
+        customer: toCustomerSession(DEMO_CUSTOMER_ACCOUNT, DEMO_CUSTOMER_ACCOUNT.email),
+      };
+    }
     return {
       status: 'authenticated',
       user: toAuthenticatedUser(
@@ -71,7 +90,7 @@ export function DemoAuthProvider({ children }: { children: ReactNode }) {
         DEMO_OWNER_PROFILE,
       ),
     };
-  }, [isActive]);
+  }, [kind]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ session, signIn, signOut, sendPasswordReset, refreshProfile }),

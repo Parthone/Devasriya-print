@@ -1,4 +1,5 @@
 import type { Department, Designation } from '@/constants/organization';
+import type { CustomerSession } from '@/features/customer-portal/types';
 import type { Permission } from '@/features/permissions/catalogue';
 import type { Entity, Id } from '@/types/common';
 
@@ -76,10 +77,19 @@ export interface AuthenticatedUser {
 /** Why an authenticated Firebase user is still not allowed into the app. */
 export type SessionRejectionReason = 'no-profile' | 'inactive';
 
-/** A session that has finished resolving: either allowed in, or not. */
+/**
+ * A session that has finished resolving.
+ *
+ * `authenticated` is a staff member; `customer` is somebody signed in to the
+ * review portal. They are separate variants on purpose: a customer has no role
+ * and no permissions, so there is no way to write a check that accidentally
+ * treats one as the other. Existing staff code narrows on `'authenticated'` and
+ * is unaffected by the customer variant.
+ */
 export type ResolvedSession =
   | { status: 'unauthenticated'; rejection: SessionRejectionReason | null }
-  | { status: 'authenticated'; user: AuthenticatedUser };
+  | { status: 'authenticated'; user: AuthenticatedUser }
+  | { status: 'customer'; customer: CustomerSession };
 
 export type SessionState = { status: 'loading' } | ResolvedSession;
 

@@ -1,6 +1,7 @@
 import { useContext } from 'react';
 
 import { AuthContext, type AuthContextValue } from '@/features/auth/context/auth-context';
+import type { CustomerSession } from '@/features/customer-portal/types';
 import type { AuthenticatedUser } from '@/types/auth';
 
 export function useAuth(): AuthContextValue {
@@ -21,4 +22,17 @@ export function useAuthenticatedUser(): AuthenticatedUser {
     throw new Error('useAuthenticatedUser must be used inside a protected route.');
   }
   return session.user;
+}
+
+/**
+ * The signed-in customer, for code that only ever runs inside the portal.
+ * Throws for a staff session, which is a routing mistake rather than a state
+ * the portal has to render.
+ */
+export function useCustomerSession(): CustomerSession {
+  const { session } = useAuth();
+  if (session.status !== 'customer') {
+    throw new Error('useCustomerSession must be used inside a customer portal route.');
+  }
+  return session.customer;
 }

@@ -3,7 +3,7 @@ rules_version = '2';
 // ---------------------------------------------------------------------------
 // Devasriya Print - Cloud Storage security rules
 //
-// Everything is denied except requirement audio, which Module 4 introduced.
+// Open paths: requirement audio (Module 4) and design files (Module 7).
 // Permissions mirror the application matrix in
 // src/features/permissions/matrix.ts, resolved from the caller's employee
 // profile in Firestore exactly as the Firestore rules do.
@@ -28,20 +28,49 @@ service firebase.storage {
     function rolePermissions() {
       return {
         'owner': ['enquiries:view', 'enquiries:create', 'enquiries:edit',
-                  'jobs:view', 'jobs:create', 'jobs:edit'],
+                  'jobs:view', 'jobs:create', 'jobs:edit',
+                  'designs:view', 'designs:upload'],
         'admin': ['enquiries:view', 'enquiries:create', 'enquiries:edit',
-                  'jobs:view', 'jobs:create', 'jobs:edit'],
+                  'jobs:view', 'jobs:create', 'jobs:edit',
+                  'designs:view', 'designs:upload'],
         'sales': ['enquiries:view', 'enquiries:create', 'enquiries:edit',
-                  'jobs:view', 'jobs:create', 'jobs:edit'],
-        'designer': ['enquiries:view', 'jobs:view'],
-        'production': ['enquiries:view', 'jobs:view', 'jobs:edit'],
+                  'jobs:view', 'jobs:create', 'jobs:edit',
+                  'designs:view'],
+        'designer': ['enquiries:view', 'jobs:view', 'designs:view', 'designs:upload'],
+        'production': ['enquiries:view', 'jobs:view', 'jobs:edit', 'designs:view'],
         'accounts': ['jobs:view'],
-        'viewer': ['enquiries:view', 'jobs:view']
+        'viewer': ['enquiries:view', 'jobs:view', 'designs:view']
       };
     }
 
     function can(permission) {
       return isActiveUser() && permission in rolePermissions()[profile().role];
+    }
+
+    // The other principal: a customer signed in to the review portal. They hold
+    // no role, so `can(...)` is false for them everywhere; the only objects they
+    // reach are the ones their own customer id is written on, checked against
+    // Firestore below.
+    function customerAccount() {
+      return firestore.get(
+        /databases/(default)/documents/customerAccounts/$(request.auth.uid)
+      ).data;
+    }
+
+    function isCustomer() {
+      return request.auth != null
+             && firestore.exists(
+                  /databases/(default)/documents/customerAccounts/$(request.auth.uid)
+                )
+             && customerAccount().isActive == true;
+    }
+
+    function jobCustomerId(jobId) {
+      return firestore.get(/databases/(default)/documents/jobs/$(jobId)).data.customerId;
+    }
+
+    function designCustomerId(designId) {
+      return firestore.get(/databases/(default)/documents/designs/$(designId)).data.customerId;
     }
 
     // Audio limits, matching src/types/attachments.ts.
@@ -65,13 +94,42 @@ service firebase.storage {
     }
 
     // Requirement held by a job: recorded directly, or copied from the enquiry
-    // at the moment of conversion.
+    // at the moment of conversion. The customer whose order it is may play
+    // their own message back on the design review screen.
     match /jobs/{jobId}/requirement/{fileName} {
-      allow read: if can('jobs:view');
+      allow read: if can('jobs:view')
+                  || (isCustomer() && jobCustomerId(jobId) == customerAccount().customerId);
       allow create, update: if resource == null
                             && (can('jobs:create') || can('jobs:edit'))
                             && isAllowedAudio();
       allow delete: if can('jobs:edit');
+    }
+
+    // Design files, one immutable object per version.
+    //
+    // The design id is in the path, so a revision writes a new object rather
+    // than replacing the one an approved version points at - which is what
+    // makes "this artwork was approved" a statement that stays true. The
+    // customer the design was sent to may read it; nobody else's customer can.
+    function isAllowedDesign() {
+      return request.resource.size > 0
+             && request.resource.size <= 25 * 1024 * 1024
+             && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp',
+                                                 'application/pdf'];
+    }
+
+    match /designs/{jobId}/{designId}/{fileName} {
+      allow read: if can('designs:view')
+                  || (isCustomer() && designCustomerId(designId) == customerAccount().customerId);
+
+      // Write once. `resource == null` is what makes this a first write rather
+      // than an overwrite of artwork somebody has already approved.
+      allow create, update: if resource == null
+                            && can('designs:upload')
+                            && isAllowedDesign();
+
+      // Artwork is never removed: an approved design must stay openable.
+      allow delete: if false;
     }
 
     match /{allPaths=**} {

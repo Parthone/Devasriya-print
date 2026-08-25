@@ -80,6 +80,16 @@ server-side authority - that migration must stay a service-layer change.
   allocated inside the transaction that creates the record.
 - Snapshots (customer name on an enquiry, pickup office on a job) exist for
   history and search. The id stays the authoritative relationship.
+- There are two kinds of principal, not one with a dial. An employee has
+  `users/{uid}`; a customer has `customerAccounts/{uid}`, no role and no entry
+  in the permission matrix, so every permission check is false for them and each
+  door they may pass is opened explicitly by their own customer id. A uid is
+  never both - each create refuses if the other exists. The session type has a
+  separate `customer` variant for the same reason: there is no shape a staff
+  check can accidentally succeed against.
+- User-facing text on a customer-facing screen comes from `src/i18n`, never from
+  a literal in a component. English defines the key type, so a language with a
+  missing string does not compile.
 - Documents given to a customer are full snapshots, not views. A quotation
   copies the priced lines, totals and customer details at creation and is never
   recomputed, so later changes to the job, the pricing or the rate card cannot

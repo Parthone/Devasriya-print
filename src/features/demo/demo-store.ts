@@ -1,6 +1,8 @@
 import {
   DEMO_AUDIT_EVENTS,
   DEMO_CUSTOMERS,
+  DEMO_CUSTOMER_ACCOUNT,
+  DEMO_DESIGNS,
   DEMO_EMPLOYEES,
   DEMO_ENQUIRIES,
   DEMO_ESTIMATES,
@@ -11,7 +13,9 @@ import {
   DEMO_PRODUCTS,
 } from '@/features/demo/demo-data';
 import type { AuditEvent } from '@/features/audit/types';
+import type { CustomerAccount } from '@/features/customer-portal/types';
 import type { Customer, CustomerInput } from '@/features/customers/types';
+import type { Design } from '@/features/designs/types';
 import type { Enquiry } from '@/features/enquiries/types';
 import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
@@ -30,6 +34,8 @@ import type { Id } from '@/types/common';
  * persistence: this exists to demonstrate the UI, not to be a second backend.
  */
 let customers: Customer[] = [...DEMO_CUSTOMERS];
+let designs: Design[] = [...DEMO_DESIGNS];
+let customerAccounts: CustomerAccount[] = [DEMO_CUSTOMER_ACCOUNT];
 let employees: UserProfile[] = [...DEMO_EMPLOYEES];
 let auditEvents: AuditEvent[] = [...DEMO_AUDIT_EVENTS];
 let sequence = 0;
@@ -50,6 +56,20 @@ export function demoAudioUrl(attachmentId: string): string | undefined {
   return audioUrls.get(attachmentId);
 }
 
+/**
+ * Same in-browser blob map, for any attachment kind.
+ *
+ * Demo mode never uploads anything, so a "stored file" is just an object URL
+ * that lives as long as the tab does.
+ */
+export function rememberDemoFile(attachmentId: string, url: string): void {
+  audioUrls.set(attachmentId, url);
+}
+
+export function demoFileUrl(attachmentId: string): string | undefined {
+  return audioUrls.get(attachmentId);
+}
+
 export function resetDemoStore(): void {
   audioUrls = new Map();
   locations = [...DEMO_LOCATIONS];
@@ -58,6 +78,8 @@ export function resetDemoStore(): void {
   products = [...DEMO_PRODUCTS];
   jobPricing = new Map(DEMO_JOB_PRICING.map((entry) => [entry.jobId, entry]));
   estimates = [...DEMO_ESTIMATES];
+  designs = [...DEMO_DESIGNS];
+  customerAccounts = [DEMO_CUSTOMER_ACCOUNT];
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
   auditEvents = [...DEMO_AUDIT_EVENTS];
@@ -317,5 +339,49 @@ export function addDemoEstimate(estimate: Omit<Estimate, 'id'>): Estimate {
 export function updateDemoEstimate(id: Id, changes: Partial<Estimate>): void {
   estimates = estimates.map((estimate) =>
     estimate.id === id ? { ...estimate, ...changes, updatedAt: new Date() } : estimate,
+  );
+}
+
+export function demoDesigns(): Design[] {
+  return [...designs].sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+}
+
+export function demoDesign(id: Id): Design | null {
+  return designs.find((design) => design.id === id) ?? null;
+}
+
+export function demoDesignsForJob(jobId: Id): Design[] {
+  return designs.filter((design) => design.jobId === jobId).sort((a, b) => b.version - a.version);
+}
+
+export function addDemoDesign(design: Design): Design {
+  designs = [design, ...designs];
+  return design;
+}
+
+export function updateDemoDesign(id: Id, changes: Partial<Design>): void {
+  designs = designs.map((design) => (design.id === id ? { ...design, ...changes } : design));
+}
+
+export function demoCustomerAccount(uid: Id): CustomerAccount | null {
+  return customerAccounts.find((account) => account.id === uid) ?? null;
+}
+
+export function demoCustomerAccountForCustomer(customerId: Id): CustomerAccount | null {
+  return customerAccounts.find((account) => account.customerId === customerId) ?? null;
+}
+
+export function upsertDemoCustomerAccount(account: CustomerAccount): void {
+  customerAccounts = [
+    account,
+    ...customerAccounts.filter((existing) => existing.id !== account.id),
+  ];
+}
+
+export function setDemoCustomerAccountActive(uid: Id, isActive: boolean, actorId: Id): void {
+  customerAccounts = customerAccounts.map((account) =>
+    account.id === uid
+      ? { ...account, isActive, updatedAt: new Date(), updatedBy: actorId }
+      : account,
   );
 }

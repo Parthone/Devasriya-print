@@ -40,6 +40,13 @@ export function ProtectedRoute({ children, requires = [] }: ProtectedRouteProps)
     );
   }
 
+  // A customer portal session is not a staff session with fewer permissions -
+  // it has no role at all. There is nothing here for them to be allowed into,
+  // so they go back to their own side of the application.
+  if (session.status === 'customer') {
+    return <Navigate to={ROUTES.portal} replace />;
+  }
+
   if (!hasAllPermissions(session.user.permissions, requires)) {
     return <Navigate to={ROUTES.forbidden} replace />;
   }

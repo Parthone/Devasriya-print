@@ -7,12 +7,15 @@ import { Toaster } from '@/components/ui/sonner';
 import { isDemoMode } from '@/config/demo';
 import { AuthProvider } from '@/features/auth/providers/AuthProvider';
 import { DemoAuthProvider } from '@/features/demo/DemoAuthProvider';
+import { LanguageBridge } from '@/i18n/LanguageBridge';
 
 /**
  * Every cross-cutting provider, in one place and in a fixed order.
  *
  * Auth sits inside Query so that authenticated data hooks share one cache, and
  * inside the error boundary so a failure while restoring a session is caught.
+ * The language layer sits inside auth, because a signed-in customer's preferred
+ * language is part of what decides which language the screens open in.
  */
 export function AppProviders({ children }: { children: ReactNode }) {
   // Demo mode swaps the session provider only. Everything downstream - guards,
@@ -25,8 +28,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <ThemeProvider>
         <QueryProvider>
           <SessionProvider>
-            {children}
-            <Toaster />
+            <LanguageBridge>
+              {children}
+              <Toaster />
+            </LanguageBridge>
           </SessionProvider>
         </QueryProvider>
       </ThemeProvider>

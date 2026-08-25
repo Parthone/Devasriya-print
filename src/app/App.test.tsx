@@ -96,11 +96,11 @@ describe('application shell', () => {
   });
 
   it('shows a placeholder for modules that are not implemented', async () => {
-    // Sales is real through Module 6; designs is still to come.
-    renderAt('/designs');
+    // Sales and design are real through Module 7; billing is still to come.
+    renderAt('/billing');
 
     expect(
-      await screen.findByRole('heading', { name: 'Design Uploads & Approvals', level: 1 }),
+      await screen.findByRole('heading', { name: 'Billing & Payments', level: 1 }),
     ).toBeInTheDocument();
     expect(screen.getByText('Not implemented')).toBeInTheDocument();
   });

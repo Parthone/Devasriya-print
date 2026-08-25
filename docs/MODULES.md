@@ -272,8 +272,7 @@ rules forbid ordinary edits from changing it.
 
 **Deliberately excluded**
 
-Design approval (Module 7), production stages (8), advanced assignment (9),
-billing (11).
+Production stages (Module 8), advanced assignment (9), billing (11).
 
 ## Module 5 - Measurements & Pricing (delivered)
 
@@ -390,6 +389,95 @@ and the rules check that the recorded name is the signed-in user's own.
 GST and tax - Module 6 is tax-neutral, and taxation belongs to invoicing in
 Module 11. No invoice, payment or PDF-library work was added.
 
-## Next: Module 7 - Design Uploads & Approvals
+## Module 7 - Design Uploads & Approvals (delivered)
+
+**One version, one document, one file**
+
+A design version is written once and never rewritten. A revision is a new
+document with the next version number and a new object in Storage, so "this
+artwork was approved" stays a true statement about a specific file. Firestore
+refuses every change to the file, the version, the job or the customer on an
+existing version, and Storage refuses a second write to a path that already
+holds an object - and refuses every delete.
+
+Version ids are `{jobId}-v{n}`, which makes them unique by construction: two
+designers uploading at the same instant collide on the create rather than both
+being handed version 3.
+
+**The states a version can be in**
+
+    draft                -> submitted-for-review, superseded
+    submitted-for-review -> approved, rejected, changes-requested, superseded
+    changes-requested / approved / rejected -> superseded
+    superseded           -> nothing further
+
+`superseded` moves the status alone. The decision and its comment stay exactly
+as written - a change request is still readable, word for word, long after the
+revision that answered it went out.
+
+**Approve, ask for changes, or reject - always with room to speak**
+
+The comment box is on screen for approval too. "Approved, but please make the
+font bigger" is one of the most common real answers, and it is an approval and
+an instruction at the same time; hiding the box behind a rejection would throw
+the instruction away. Rejections and change requests require a comment,
+approvals do not.
+
+Every decision records who gave it and how: `source: 'customer'` when the
+customer answered in the portal, `source: 'staff'` when somebody wrote down what
+they said on the phone. The rules pin `source` and `byId` to whoever is actually
+signed in, so staff cannot post an answer as though the customer had typed it.
+
+**Two kinds of principal**
+
+Customers are not employees with fewer permissions. An employee has
+`users/{uid}`; a customer has `customerAccounts/{uid}`, no role, and no entry
+anywhere in the permission matrix - `can(...)` is false for them everywhere in
+the rules. One uid is never both: each create refuses if the other exists.
+
+The portal has its own shell, its own route guard and its own sign-in page.
+A customer who lands on a staff URL is sent to the portal; a staff member who
+lands on a portal URL is sent to the dashboard.
+
+Access is granted from the customer record ("Design review portal"), which
+creates the login with a throwaway password and emails the customer a link to
+set their own - nobody at the shop ever knows a customer password. Access is
+revoked by deactivating the account, never by deleting it, so the designs they
+approved keep their name on them.
+
+**Hindi and English**
+
+`src/i18n` holds a flat, namespaced catalogue. English defines the key type, so
+a missing Hindi string is a compile error, and the tests additionally check that
+every customer-facing key is genuinely translated rather than copied. A customer
+opens the portal in the `preferredLanguage` on their Module 3 record; the toggle
+is on every screen and an explicit choice wins from then on. The two buttons are
+labelled in their own scripts, never translated, so somebody who opened the
+wrong language can read their way out.
+
+**Files**
+
+`designs/{jobId}/{designId}/{attachmentId}.{ext}`, JPG, PNG, WEBP or PDF up to
+25 MB. No download URL is ever persisted: the viewable URL is resolved at run
+time for whoever is signed in, so a link cannot be lifted out of Firestore and
+used by somebody the rules would refuse. Images render inline; PDFs get an open
+action into the browser's own viewer. There is no design editor and no PDF
+library.
+
+**Production handoff**
+
+The approved artwork is the design whose status is `approved`, exposed as
+`approvedDesign(designs)`. It is deliberately _not_ copied onto the job as a
+pointer: a customer approving from the portal writes one document - their own
+version - and is never given write access to the job record, so there is no
+denormalised field that can drift out of step with the decision that set it.
+Approving supersedes any earlier approval, so a job never has two.
+
+**Deliberately excluded**
+
+Department workflow (Module 8). Nothing here schedules or assigns production
+work; it only makes the approved artwork easy to find.
+
+## Next: Module 8 - Department Workflow
 
 Scope to be confirmed before implementation.
