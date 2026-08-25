@@ -2,6 +2,8 @@ import {
   AlarmClock,
   CalendarClock,
   ClipboardList,
+  FileText,
+  MailCheck,
   MessageSquareText,
   PackageCheck,
   Users,
@@ -147,6 +149,29 @@ export function DashboardPage() {
                   value={data.jobSummary.ready}
                   icon={PackageCheck}
                   to={ROUTES.jobs}
+                />
+              </>
+            ) : null}
+
+            {data.canSeeEstimates ? (
+              <>
+                <KpiCard
+                  label="Draft quotations"
+                  value={data.estimateSummary.drafts}
+                  icon={FileText}
+                  hint="Not sent to the customer yet"
+                  to={ROUTES.estimates}
+                />
+                <KpiCard
+                  label="Awaiting approval"
+                  value={data.estimateSummary.awaitingApproval}
+                  icon={MailCheck}
+                  hint={
+                    data.estimateSummary.pastValidity > 0
+                      ? `${String(data.estimateSummary.pastValidity)} more past validity`
+                      : 'Sent and still valid'
+                  }
+                  to={ROUTES.estimates}
                 />
               </>
             ) : null}

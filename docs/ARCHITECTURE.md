@@ -80,6 +80,11 @@ server-side authority - that migration must stay a service-layer change.
   allocated inside the transaction that creates the record.
 - Snapshots (customer name on an enquiry, pickup office on a job) exist for
   history and search. The id stays the authoritative relationship.
+- Documents given to a customer are full snapshots, not views. A quotation
+  copies the priced lines, totals and customer details at creation and is never
+  recomputed, so later changes to the job, the pricing or the rate card cannot
+  move what was already quoted. The rules keep those fields immutable by naming,
+  per allowed transition, exactly which keys a write may touch.
 - Files live at immutable paths under an attachment id, and no Storage download
   URL is ever persisted - resolve one at play time through the storage service.
 - Firestore rules are per document, never per field. Data that only some roles
@@ -146,7 +151,7 @@ defence; feature-level boundaries can be nested inside it.
 ## 7. Security rules
 
 `storage.rules` is deny-all, and `firestore.rules` denies everything except the
-collections a delivered module has opened up (currently `users`). A collection is
+collections a delivered module has opened up. A collection is
 opened only together with the role model it depends on. Rules are part
 of the definition of done for a module - not an afterthought. A blanket allow is
 never acceptable, including in development (use the emulators instead).

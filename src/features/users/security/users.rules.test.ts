@@ -233,10 +233,10 @@ describe('users collection - writing', () => {
 
 describe('collections no module has opened yet', () => {
   it('stay denied for administrators too', async () => {
-    // customers, enquiries, jobs and locations are open from Modules 3 and 4,
-    // and have their own rules tests.
+    // customers, enquiries, jobs, locations, products, jobPricing and
+    // estimates are open from Modules 3 to 6 and have their own rules tests.
     const db = testEnv.authenticatedContext(OWNER).firestore();
-    await assertFails(getDocs(collection(db, 'estimates')));
+    await assertFails(getDocs(collection(db, 'designs')));
     await assertFails(setDoc(doc(db, 'invoices', 'invoice-1'), { anything: true }));
   });
 });

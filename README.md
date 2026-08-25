@@ -451,6 +451,62 @@ just in the UI. The job detail page only asks for pricing when the signed-in
 user holds that permission, so no denied request is ever sent. Nothing about
 money remains on `jobs/{jobId}`.
 
+## Estimates and quotations
+
+A quotation is made **from a priced job**, and it is a historical record. When it
+is created it copies the job pricing exactly as that pricing stands: the priced
+lines, the subtotal, the adjustment and the total, along with the customer's
+name, business name, address and GSTIN. Nothing is linked back afterwards, so
+re-pricing the job, changing a rate on the rate card or editing the customer
+record cannot move a quotation that has already been given. There is an
+end-to-end test that triples a rate and checks the quotation is unchanged.
+
+Quotations are numbered `EST-2627-0001` in the Indian financial year, allocated
+in the same transaction that writes the document, so two people quoting at the
+same moment can never be given the same number.
+
+### The life of a quotation
+
+    draft  -> sent, cancelled
+    sent   -> approved, rejected, expired, cancelled
+    approved / rejected / expired / cancelled -> nothing further
+
+Only a **draft** can have its wording and validity date changed. Once it has gone
+out, the answer to a changed price is a new quotation from the job, not a quiet
+edit to the old one. That rule is enforced three times over: the buttons that are
+offered, the service, and the security rules - where each allowed move names the
+exact keys it may touch, so a status change can never smuggle a rewritten price
+alongside it. Nothing is ever deleted; a withdrawn quotation is cancelled.
+
+Approval and rejection are recorded by staff on the customer's behalf until the
+customer portal arrives, so the record keeps the outcome, when it was recorded,
+who recorded it and whatever the customer said.
+
+### Screens
+
+- **Estimates** (`/estimates`) - search by quotation number, job number,
+  customer, business name or mobile; filter by status; paged
+- **Quotation detail** (`/estimates/{id}`) - the record, the actions the current
+  role and status actually allow, and the quotation document itself
+- The quotation prints straight from the browser. There is no PDF library: a
+  print stylesheet drops the application shell and leaves the document.
+- **Job detail** gains a "Create quotation" action and lists the quotations
+  already raised against that job
+
+### Who can do what
+
+- **See quotations:** `estimates:view` - owner, admin, sales, accounts, viewer.
+  Designer and production are refused at the database, and the UI never asks.
+- **Create and edit a draft:** `estimates:create` and `estimates:edit` - owner,
+  admin and sales.
+- **Record what the customer decided:** `estimates:approve` - owner, admin and
+  sales. The rules check the recorded name is the signed-in user's own.
+
+### No tax here
+
+Module 6 is deliberately tax-neutral. GST belongs to invoicing in Module 11, and
+no placeholder tax fields were added to the quotation.
+
 ## Project structure
 
 ```
@@ -470,6 +526,7 @@ src/
     jobs/       Jobs, conversion from enquiries, assignment (Module 4)
     locations/  Pickup offices and their contact people (Module 4)
     products/   Rate card and the Products & rates screen (Module 5)
+    estimates/  Quotations made from a priced job (Module 6)
     demo/       Temporary demo-mode session and sample data
     permissions/ Permission catalogue, role matrix, gates (Module 2)
     users/      Employee directory and account provisioning (Module 1)

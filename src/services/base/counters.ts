@@ -14,13 +14,17 @@ import { COLLECTIONS } from '@/services/base/collections';
  * never shown in the UI, and the security rules only accept an increment of
  * exactly one from somebody allowed to create that kind of document.
  */
-export type CounterScope = 'enquiries' | 'jobs';
+export type CounterScope = 'enquiries' | 'jobs' | 'estimates';
 
 export function counterId(scope: CounterScope, yearKey: string): string {
   return `${scope}-${yearKey}`;
 }
 
-const PREFIX: Record<CounterScope, string> = { enquiries: 'ENQ', jobs: 'JOB' };
+const PREFIX: Record<CounterScope, string> = {
+  enquiries: 'ENQ',
+  jobs: 'JOB',
+  estimates: 'EST',
+};
 
 /** Allocates the next number inside an existing transaction. */
 export async function allocateNumberInTransaction(

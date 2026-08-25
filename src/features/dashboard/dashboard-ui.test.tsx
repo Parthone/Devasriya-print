@@ -7,6 +7,7 @@ import { routes } from '@/app/router/routes';
 import { ROUTES } from '@/constants/routes';
 import type { Customer } from '@/features/customers/types';
 import type { Enquiry } from '@/features/enquiries/types';
+import type { Estimate } from '@/features/estimates/types';
 import type { Job } from '@/features/jobs/types';
 import type { AuthAccount, UserProfile, UserRole } from '@/types/auth';
 
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   listCustomers: vi.fn(),
   listEnquiries: vi.fn(),
   listJobs: vi.fn(),
+  listEstimates: vi.fn(),
 }));
 
 vi.mock('@/features/auth/services/auth.service', () => ({
@@ -70,6 +72,19 @@ vi.mock('@/features/jobs/services/job.service', () => ({
   createJob: vi.fn(),
   updateJob: vi.fn(),
   assignJob: vi.fn(),
+}));
+
+vi.mock('@/features/estimates/services/estimate.service', () => ({
+  ESTIMATE_FETCH_CAP: 500,
+  estimateRepository: {},
+  listEstimates: mocks.listEstimates,
+  findEstimate: vi.fn(),
+  defaultValidUntil: () => new Date(),
+  createEstimate: vi.fn(),
+  updateDraftEstimate: vi.fn(),
+  markEstimateSent: vi.fn(),
+  recordEstimateDecision: vi.fn(),
+  closeEstimate: vi.fn(),
 }));
 
 const NOW = new Date();
@@ -229,11 +244,39 @@ function renderAsRole(role: UserRole) {
   );
 }
 
+function estimateFixture(status: Estimate['status'], validUntil: Date): Estimate {
+  return {
+    id: `estimate-${status}-${String(validUntil.getTime())}`,
+    estimateNumber: 'EST-2627-0001',
+    jobId: 'job-1',
+    jobNumber: 'JOB-2627-0001',
+    jobTitle: 'Shop board',
+    customerId: 'c1',
+    customerName: 'Ravi Kumar',
+    customerMobile: '9812300011',
+    estimateDate: NOW,
+    validUntil,
+    lines: [],
+    subtotal: { paise: 0, currency: 'INR' },
+    adjustment: null,
+    total: { paise: 0, currency: 'INR' },
+    status,
+    sentAt: null,
+    decision: null,
+    cancelledAt: null,
+    createdAt: NOW,
+    createdBy: 'uid-owner',
+    updatedAt: NOW,
+    updatedBy: 'uid-owner',
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.listCustomers.mockResolvedValue({ customers: CUSTOMERS, capReached: false, cap: 1000 });
   mocks.listEnquiries.mockResolvedValue({ enquiries: ENQUIRIES, capReached: false, cap: 500 });
   mocks.listJobs.mockResolvedValue({ jobs: JOBS, capReached: false, cap: 500 });
+  mocks.listEstimates.mockResolvedValue({ estimates: [], capReached: false, cap: 500 });
 });
 
 describe('KPI cards', () => {
@@ -261,6 +304,34 @@ describe('KPI cards', () => {
     // One job is due tomorrow, one is two days overdue.
     expect(screen.getByRole('link', { name: 'Jobs due soon: 1' })).toBeInTheDocument();
   });
+
+  it('counts draft quotations and the ones waiting on the customer', async () => {
+    mocks.listEstimates.mockResolvedValue({
+      estimates: [
+        estimateFixture('draft', ist(2)),
+        estimateFixture('sent', ist(3)),
+        estimateFixture('sent', ist(-5)),
+        estimateFixture('approved', ist(-5)),
+      ],
+      capReached: false,
+      cap: 500,
+    });
+    await renderAndSettle('owner');
+
+    expect(screen.getByRole('link', { name: /^Draft quotations: 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Awaiting approval: 1/ })).toBeInTheDocument();
+    expect(screen.getByText(/1 more past validity/i)).toBeInTheDocument();
+  });
+
+  it.each(['designer', 'production'] as UserRole[])(
+    'never shows %s a quotation count, nor asks for one',
+    async (role) => {
+      await renderAndSettle(role);
+
+      expect(screen.queryByText(/draft quotations/i)).not.toBeInTheDocument();
+      expect(mocks.listEstimates).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('needs attention', () => {

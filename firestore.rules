@@ -50,16 +50,19 @@ service cloud.firestore {
                   'customers:view', 'customers:create', 'customers:edit',
                   'enquiries:view', 'enquiries:create', 'enquiries:edit',
                   'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign',
-                  'estimates:view', 'estimates:create', 'estimates:edit'],
+                  'estimates:view', 'estimates:create', 'estimates:edit',
+                  'estimates:approve'],
         'admin': ['employees:view', 'employees:manage', 'settings:view',
                   'customers:view', 'customers:create', 'customers:edit',
                   'enquiries:view', 'enquiries:create', 'enquiries:edit',
                   'jobs:view', 'jobs:create', 'jobs:edit', 'jobs:assign',
-                  'estimates:view', 'estimates:create', 'estimates:edit'],
+                  'estimates:view', 'estimates:create', 'estimates:edit',
+                  'estimates:approve'],
         'sales': ['customers:view', 'customers:create', 'customers:edit',
                   'enquiries:view', 'enquiries:create', 'enquiries:edit',
                   'jobs:view', 'jobs:create', 'jobs:edit',
-                  'estimates:view', 'estimates:create', 'estimates:edit'],
+                  'estimates:view', 'estimates:create', 'estimates:edit',
+                  'estimates:approve'],
         'designer': ['customers:view', 'enquiries:view', 'jobs:view'],
         'production': ['employees:view', 'customers:view',
                        'enquiries:view', 'jobs:view', 'jobs:edit'],
@@ -270,7 +273,8 @@ service cloud.firestore {
     match /counters/{counterId} {
       function mayUseCounter() {
         return (counterId.matches('^enquiries-[0-9]{4}$') && can('enquiries:create'))
-               || (counterId.matches('^jobs-[0-9]{4}$') && can('jobs:create'));
+               || (counterId.matches('^jobs-[0-9]{4}$') && can('jobs:create'))
+               || (counterId.matches('^estimates-[0-9]{4}$') && can('estimates:create'));
       }
 
       allow get: if mayUseCounter();
@@ -487,6 +491,104 @@ service cloud.firestore {
                     && request.resource.data.updatedBy == request.auth.uid;
 
       // Pricing history stays with the job it belongs to.
+      allow delete: if false;
+    }
+
+    // Quotations are historical records. The priced lines, the totals and the
+    // customer details are a snapshot taken at creation, so every update rule
+    // below names exactly which keys a write may touch - nothing else can move,
+    // whatever the client sends.
+    match /estimates/{estimateId} {
+      function isValidEstimate(data) {
+        return data.keys().hasAll(['estimateNumber', 'jobId', 'jobNumber', 'jobTitle',
+                                   'customerId', 'customerName', 'customerMobile',
+                                   'estimateDate', 'validUntil', 'lines', 'subtotal', 'total',
+                                   'status', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.keys().hasOnly(['estimateNumber', 'jobId', 'jobNumber', 'jobTitle',
+                                       'customerId', 'customerName', 'customerMobile',
+                                       'customerBusinessName', 'customerAddress', 'customerGstin',
+                                       'estimateDate', 'validUntil', 'lines', 'subtotal',
+                                       'adjustment', 'total', 'notes', 'terms', 'status',
+                                       'sentAt', 'decision', 'cancelledAt',
+                                       'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+               && data.estimateNumber is string
+               && data.jobId is string
+               && data.customerId is string
+               && data.lines is list
+               && data.lines.size() > 0
+               && data.lines.size() <= 50
+               && isValidMoney(data.subtotal)
+               && isValidMoney(data.total)
+               && data.total.paise >= 0
+               && data.status in ['draft', 'sent', 'approved', 'rejected', 'expired', 'cancelled']
+               && data.updatedBy is string
+               && (data.get('adjustment', null) == null
+                   || (data.adjustment.keys().hasOnly(['amount', 'reason'])
+                       && isValidMoney(data.adjustment.amount)
+                       && data.adjustment.reason is string
+                       && data.adjustment.reason.size() > 0));
+      }
+
+      function touchesOnly(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+      }
+
+      function movesFromTo(from, allowed) {
+        return resource.data.status == from
+               && request.resource.data.status in allowed;
+      }
+
+      // Wording and validity, on a draft only. The snapshot is untouched.
+      function isDraftEdit() {
+        return can('estimates:edit')
+               && resource.data.status == 'draft'
+               && request.resource.data.status == 'draft'
+               && touchesOnly(['validUntil', 'notes', 'terms', 'updatedAt', 'updatedBy']);
+      }
+
+      // The quotation went out to the customer.
+      function isSendMove() {
+        return can('estimates:edit')
+               && movesFromTo('draft', ['sent'])
+               && touchesOnly(['status', 'sentAt', 'updatedAt', 'updatedBy']);
+      }
+
+      // What the customer said, recorded against the staff member entering it.
+      function isDecisionMove() {
+        return can('estimates:approve')
+               && movesFromTo('sent', ['approved', 'rejected'])
+               && touchesOnly(['status', 'decision', 'updatedAt', 'updatedBy'])
+               && request.resource.data.decision.keys().hasAll(['outcome', 'at', 'byId', 'byName'])
+               && request.resource.data.decision.keys().hasOnly(['outcome', 'at', 'byId', 'byName', 'note'])
+               && request.resource.data.decision.outcome == request.resource.data.status
+               && request.resource.data.decision.byId == request.auth.uid;
+      }
+
+      // Withdrawn or past its validity date. Nothing is ever deleted.
+      function isCloseMove() {
+        return can('estimates:edit')
+               && (movesFromTo('draft', ['cancelled'])
+                   || movesFromTo('sent', ['expired', 'cancelled']))
+               && touchesOnly(['status', 'cancelledAt', 'updatedAt', 'updatedBy']);
+      }
+
+      allow get, list: if can('estimates:view');
+
+      allow create: if can('estimates:create')
+                    && isValidEstimate(request.resource.data)
+                    && request.resource.data.status == 'draft'
+                    && request.resource.data.get('decision', null) == null
+                    && request.resource.data.get('sentAt', null) == null
+                    && request.resource.data.get('cancelledAt', null) == null
+                    && request.resource.data.createdBy == request.auth.uid
+                    && request.resource.data.updatedBy == request.auth.uid;
+
+      allow update: if resource != null
+                    && isValidEstimate(request.resource.data)
+                    && request.resource.data.updatedBy == request.auth.uid
+                    && (isDraftEdit() || isSendMove() || isDecisionMove() || isCloseMove());
+
+      // A quotation that was given to a customer stays on record.
       allow delete: if false;
     }
 

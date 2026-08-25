@@ -1,5 +1,6 @@
 import type { Customer } from '@/features/customers/types';
 import { ENQUIRY_STATUSES, type Enquiry, type EnquiryStatus } from '@/features/enquiries/types';
+import type { Estimate } from '@/features/estimates/types';
 import { JOB_STATUSES, type Job, type JobStatus } from '@/features/jobs/types';
 import { isDueWithin, isOverdue, isToday } from '@/lib/business-day';
 
@@ -112,4 +113,36 @@ export function summariseJobs(jobs: readonly Job[], now: Date = new Date()): Job
     unassigned: active.filter((job) => !job.assignedToId),
     upcomingDeliveries: [...withDelivery].sort(bySoonest),
   };
+}
+
+export interface EstimateSummary {
+  /** Quotations made but not yet given to the customer. */
+  drafts: number;
+  /** Sent and still within their validity date. */
+  awaitingApproval: number;
+  /** Sent but past the validity date, so worth chasing or reissuing. */
+  pastValidity: number;
+}
+
+export function summariseEstimates(
+  estimates: readonly Estimate[],
+  now: Date = new Date(),
+): EstimateSummary {
+  let drafts = 0;
+  let awaitingApproval = 0;
+  let pastValidity = 0;
+
+  for (const estimate of estimates) {
+    if (estimate.status === 'draft') {
+      drafts += 1;
+    } else if (estimate.status === 'sent') {
+      if (estimate.validUntil.getTime() < now.getTime()) {
+        pastValidity += 1;
+      } else {
+        awaitingApproval += 1;
+      }
+    }
+  }
+
+  return { drafts, awaitingApproval, pastValidity };
 }

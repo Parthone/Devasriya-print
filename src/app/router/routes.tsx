@@ -6,6 +6,8 @@ import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { CustomerDetailPage } from '@/features/customers/pages/CustomerDetailPage';
 import { EnquiriesPage } from '@/features/enquiries/pages/EnquiriesPage';
 import { EnquiryDetailPage } from '@/features/enquiries/pages/EnquiryDetailPage';
+import { EstimateDetailPage } from '@/features/estimates/pages/EstimateDetailPage';
+import { EstimatesPage } from '@/features/estimates/pages/EstimatesPage';
 import { JobDetailPage } from '@/features/jobs/pages/JobDetailPage';
 import { JobsPage } from '@/features/jobs/pages/JobsPage';
 import { LocationsPage } from '@/features/locations/pages/LocationsPage';
@@ -106,6 +108,22 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['jobs:view']}>
             <JobDetailPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.estimates,
+        element: (
+          <ProtectedRoute requires={['estimates:view']}>
+            <EstimatesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.estimateDetail,
+        element: (
+          <ProtectedRoute requires={['estimates:view']}>
+            <EstimateDetailPage />
           </ProtectedRoute>
         ),
       },

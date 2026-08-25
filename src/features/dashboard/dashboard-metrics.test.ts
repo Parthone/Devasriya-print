@@ -4,9 +4,11 @@ import type { Customer } from '@/features/customers/types';
 import {
   summariseCustomers,
   summariseEnquiries,
+  summariseEstimates,
   summariseJobs,
 } from '@/features/dashboard/services/dashboard-metrics';
 import type { Enquiry } from '@/features/enquiries/types';
+import type { Estimate, EstimateStatus } from '@/features/estimates/types';
 import type { Job } from '@/features/jobs/types';
 
 const NOW = new Date('2026-08-24T06:00:00.000Z'); // 11:30 IST
@@ -272,5 +274,59 @@ describe('job KPIs', () => {
     expect(summary.active).toBe(0);
     expect(summary.dueSoon).toEqual([]);
     expect(summary.upcomingDeliveries).toEqual([]);
+  });
+});
+
+function estimate(status: EstimateStatus, validUntil: Date): Estimate {
+  return {
+    id: `estimate-${status}-${String(validUntil.getTime())}`,
+    estimateNumber: 'EST-2627-0001',
+    jobId: 'job-1',
+    jobNumber: 'JOB-2627-0001',
+    jobTitle: 'Shop board',
+    customerId: 'customer-1',
+    customerName: 'Ravi Kumar',
+    customerMobile: '9812300011',
+    estimateDate: NOW,
+    validUntil,
+    lines: [],
+    subtotal: { paise: 0, currency: 'INR' },
+    adjustment: null,
+    total: { paise: 0, currency: 'INR' },
+    status,
+    sentAt: null,
+    decision: null,
+    cancelledAt: null,
+    createdAt: NOW,
+    createdBy: 'uid-owner',
+    updatedAt: NOW,
+    updatedBy: 'uid-owner',
+  };
+}
+
+describe('summarising quotations', () => {
+  it('separates drafts, quotations still awaiting a reply, and stale ones', () => {
+    const summary = summariseEstimates(
+      [
+        estimate('draft', ist('2026-09-10')),
+        estimate('draft', ist('2026-09-11')),
+        estimate('sent', ist('2026-09-01')),
+        estimate('sent', ist('2026-08-20')),
+        estimate('approved', ist('2026-08-20')),
+        estimate('rejected', ist('2026-08-20')),
+        estimate('cancelled', ist('2026-08-20')),
+      ],
+      NOW,
+    );
+
+    expect(summary).toEqual({ drafts: 2, awaitingApproval: 1, pastValidity: 1 });
+  });
+
+  it('reports zeros when there is nothing quoted yet', () => {
+    expect(summariseEstimates([], NOW)).toEqual({
+      drafts: 0,
+      awaitingApproval: 0,
+      pastValidity: 0,
+    });
   });
 });

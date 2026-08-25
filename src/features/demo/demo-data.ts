@@ -1,6 +1,7 @@
 import type { AuditEvent } from '@/features/audit/types';
 import type { Customer } from '@/features/customers/types';
 import type { Enquiry } from '@/features/enquiries/types';
+import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
 import type { Job } from '@/features/jobs/types';
 import type { Location } from '@/features/locations/types';
@@ -572,6 +573,84 @@ export const DEMO_JOB_PRICING: JobPricingDocument[] = [
     createdAt: stamp(9),
     createdBy: DEMO_OWNER_UID,
     updatedAt: stamp(10),
+    updatedBy: DEMO_OWNER_UID,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Module 6 demo data: quotations
+// ---------------------------------------------------------------------------
+
+const DEMO_PRICING_LINES = DEMO_JOB_PRICING[0]?.lines ?? [];
+
+export const DEMO_ESTIMATES: Estimate[] = [
+  {
+    id: 'demo-estimate-1',
+    estimateNumber: 'EST-2627-0001',
+    jobId: 'demo-job-1',
+    jobNumber: 'JOB-2627-0001',
+    jobTitle: 'Diwali sale hoardings',
+    customerId: 'demo-customer-2',
+    customerName: 'Shreeji Traders',
+    customerMobile: '9829100022',
+    customerBusinessName: 'Shreeji Traders Pvt Ltd',
+    customerAddress: '4 Market Road, Shop 18, Udaipur 313001',
+    customerGstin: '08AABCU9603R1ZM',
+    estimateDate: stamp(10),
+    validUntil: stamp(25),
+    lines: DEMO_PRICING_LINES,
+    subtotal: rate(5780),
+    adjustment: { amount: rate(-280), reason: 'Repeat customer discount' },
+    total: rate(5500),
+    notes: 'Artwork to be confirmed before printing.',
+    terms:
+      '50% advance with the order, balance before delivery. Prices hold until the validity date above.',
+    status: 'sent',
+    sentAt: stamp(11),
+    decision: null,
+    cancelledAt: null,
+    createdAt: stamp(10),
+    createdBy: DEMO_OWNER_UID,
+    updatedAt: stamp(11),
+    updatedBy: DEMO_OWNER_UID,
+  },
+  {
+    id: 'demo-estimate-2',
+    estimateNumber: 'EST-2627-0002',
+    jobId: 'demo-job-2',
+    jobNumber: 'JOB-2627-0002',
+    jobTitle: 'Festival box labels',
+    customerId: 'demo-customer-4',
+    customerName: 'Gupta Sweets',
+    customerMobile: '9414300044',
+    customerBusinessName: 'Gupta Sweets & Namkeen',
+    customerAddress: '9 Sardar Patel Marg, Jodhpur 342001',
+    estimateDate: stamp(12),
+    validUntil: stamp(27),
+    lines: [
+      {
+        id: 'line-1',
+        productId: 'demo-product-4',
+        productName: 'Visiting Card (per card)',
+        pricingMethod: 'per-piece',
+        quantity: 2000,
+        rate: rate(8),
+        rateUnit: 'piece',
+        lineAmount: rate(16000),
+      },
+    ],
+    subtotal: rate(16000),
+    adjustment: null,
+    total: rate(16000),
+    terms:
+      '50% advance with the order, balance before delivery. Prices hold until the validity date above.',
+    status: 'draft',
+    sentAt: null,
+    decision: null,
+    cancelledAt: null,
+    createdAt: stamp(12),
+    createdBy: DEMO_OWNER_UID,
+    updatedAt: stamp(12),
     updatedBy: DEMO_OWNER_UID,
   },
 ];

@@ -4,15 +4,19 @@ import { useCustomerDirectory } from '@/features/customers/hooks/use-customers';
 import type { Customer } from '@/features/customers/types';
 import { useEnquiryDirectory } from '@/features/enquiries/hooks/use-enquiries';
 import type { Enquiry } from '@/features/enquiries/types';
+import { useEstimateDirectory } from '@/features/estimates/hooks/use-estimates';
+import type { Estimate } from '@/features/estimates/types';
 import { useJobDirectory } from '@/features/jobs/hooks/use-jobs';
 import type { Job } from '@/features/jobs/types';
 import { usePermissions } from '@/features/permissions/hooks/use-permissions';
 import {
   summariseCustomers,
   summariseEnquiries,
+  summariseEstimates,
   summariseJobs,
   type CustomerSummary,
   type EnquirySummary,
+  type EstimateSummary,
   type JobSummary,
 } from '@/features/dashboard/services/dashboard-metrics';
 import {
@@ -25,14 +29,17 @@ export interface DashboardData {
   canSeeCustomers: boolean;
   canSeeEnquiries: boolean;
   canSeeJobs: boolean;
+  canSeeEstimates: boolean;
 
   customers: Customer[];
   enquiries: Enquiry[];
   jobs: Job[];
+  estimates: Estimate[];
 
   customerSummary: CustomerSummary;
   enquirySummary: EnquirySummary;
   jobSummary: JobSummary;
+  estimateSummary: EstimateSummary;
   recentUpdates: RecentUpdate[];
 
   isPending: boolean;
@@ -55,18 +62,22 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
   const canSeeCustomers = can('customers:view');
   const canSeeEnquiries = can('enquiries:view');
   const canSeeJobs = can('jobs:view');
+  const canSeeEstimates = can('estimates:view');
 
   const customerQuery = useCustomerDirectory({ enabled: canSeeCustomers });
   const enquiryQuery = useEnquiryDirectory({ enabled: canSeeEnquiries });
   const jobQuery = useJobDirectory({ enabled: canSeeJobs });
+  const estimateQuery = useEstimateDirectory({ enabled: canSeeEstimates });
 
   const customers = useMemo(() => customerQuery.data?.customers ?? [], [customerQuery.data]);
   const enquiries = useMemo(() => enquiryQuery.data?.enquiries ?? [], [enquiryQuery.data]);
   const jobs = useMemo(() => jobQuery.data?.jobs ?? [], [jobQuery.data]);
+  const estimates = useMemo(() => estimateQuery.data?.estimates ?? [], [estimateQuery.data]);
 
   const customerSummary = useMemo(() => summariseCustomers(customers), [customers]);
   const enquirySummary = useMemo(() => summariseEnquiries(enquiries, now), [enquiries, now]);
   const jobSummary = useMemo(() => summariseJobs(jobs, now), [jobs, now]);
+  const estimateSummary = useMemo(() => summariseEstimates(estimates, now), [estimates, now]);
   const recentUpdates = useMemo(
     () => buildRecentUpdates(customers, enquiries, jobs),
     [customers, enquiries, jobs],
@@ -76,18 +87,22 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
     canSeeCustomers ? customerQuery : null,
     canSeeEnquiries ? enquiryQuery : null,
     canSeeJobs ? jobQuery : null,
+    canSeeEstimates ? estimateQuery : null,
   ].filter((query) => query !== null);
 
   return {
     canSeeCustomers,
     canSeeEnquiries,
     canSeeJobs,
+    canSeeEstimates,
     customers,
     enquiries,
     jobs,
+    estimates,
     customerSummary,
     enquirySummary,
     jobSummary,
+    estimateSummary,
     recentUpdates,
     isPending: activeQueries.some((query) => query.isPending),
     isError: activeQueries.some((query) => query.isError),
@@ -96,6 +111,7 @@ export function useDashboardData(now: Date = new Date()): DashboardData {
       activeQueries.every((query) => query.isSuccess) &&
       customers.length === 0 &&
       enquiries.length === 0 &&
-      jobs.length === 0,
+      jobs.length === 0 &&
+      estimates.length === 0,
   };
 }

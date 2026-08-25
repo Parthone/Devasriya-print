@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ROUTES } from '@/constants/routes';
 import { useAuthenticatedUser } from '@/features/auth/hooks/use-auth';
+import { JobEstimatesCard } from '@/features/estimates/components/JobEstimatesCard';
 import { AssignJobDialog } from '@/features/jobs/components/AssignJobDialog';
 import { JobFormDialog, type JobSubmitPayload } from '@/features/jobs/components/JobFormDialog';
 import { JobPricingCard } from '@/features/jobs/components/JobPricingCard';
@@ -230,6 +231,14 @@ export function JobDetailPage() {
           onSave={(pricing) => {
             updatePricing.mutate({ jobId: job.id, pricing });
           }}
+        />
+      ) : null}
+
+      {canSeePricing ? (
+        <JobEstimatesCard
+          job={job}
+          pricing={pricingQuery.data ?? null}
+          canCreate={can('estimates:create')}
         />
       ) : null}
 

@@ -58,6 +58,19 @@ vi.mock('@/features/jobs/services/job-pricing.service', () => ({
   saveJobPricing: mocks.saveJobPricing,
 }));
 
+vi.mock('@/features/estimates/services/estimate.service', () => ({
+  ESTIMATE_FETCH_CAP: 500,
+  estimateRepository: {},
+  listEstimates: vi.fn().mockResolvedValue({ estimates: [], capReached: false, cap: 500 }),
+  findEstimate: vi.fn(),
+  defaultValidUntil: () => new Date('2026-09-08T10:00:00.000Z'),
+  createEstimate: vi.fn(),
+  updateDraftEstimate: vi.fn(),
+  markEstimateSent: vi.fn(),
+  recordEstimateDecision: vi.fn(),
+  closeEstimate: vi.fn(),
+}));
+
 vi.mock('@/features/products/services/product.service', () => ({
   productRepository: {},
   listProducts: mocks.listProducts,
@@ -78,7 +91,7 @@ vi.mock('@/features/customers/services/customer.service', () => ({
   customerRepository: {},
   listCustomers: vi.fn().mockResolvedValue({ customers: [], capReached: false, cap: 1000 }),
   getCustomer: vi.fn(),
-  findCustomer: vi.fn(),
+  findCustomer: vi.fn().mockResolvedValue(null),
   createCustomer: vi.fn(),
   updateCustomer: vi.fn(),
   setCustomerArchived: vi.fn(),

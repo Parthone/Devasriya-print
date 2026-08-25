@@ -272,8 +272,8 @@ rules forbid ordinary edits from changing it.
 
 **Deliberately excluded**
 
-Measurements and pricing (Module 5), quotations (6), design approval (7),
-production stages (8), advanced assignment (9), billing (11).
+Design approval (Module 7), production stages (8), advanced assignment (9),
+billing (11).
 
 ## Module 5 - Measurements & Pricing (delivered)
 
@@ -326,6 +326,70 @@ and the UI only requests pricing for a user who may read it.
 GST and tax (Modules 6 and 11), quotation documents (6), inventory (12). No
 placeholder tax fields were added.
 
-## Next: Module 6 - Estimates & Quotations
+## Module 6 - Estimates & Quotations (delivered)
+
+**A quotation is a historical record**
+
+An estimate is created from the job pricing snapshot and copies it verbatim: the
+priced lines, the subtotal, the adjustment and the total, together with the
+customer name, business name, address and GSTIN as they read that day. Nothing
+is linked back to the job, `jobPricing/{jobId}` or the rate card, so re-pricing
+the job, changing a product rate or editing the customer cannot move a quotation
+that has already been given. Proven end to end against the emulators.
+
+**The document** (`estimates/{estimateId}`)
+
+- `EST-2627-0001`, allocated in the same transaction that writes the quotation,
+  from the Indian financial-year counter used by enquiries and jobs
+- Job id, job number and job title; customer id, name, mobile, business name,
+  address and GSTIN - all snapshots
+- Quotation date and a validity date (15 days by default)
+- Priced lines, subtotal, one signed adjustment with its reason, and the total
+- Notes and terms, the only wording a person types
+- Status, `sentAt`, the customer's decision and `cancelledAt`
+
+**The states it can be in**
+
+    draft  -> sent, cancelled
+    sent   -> approved, rejected, expired, cancelled
+    approved / rejected / expired / cancelled -> nothing
+
+Only a draft may have its wording or validity changed; once a quotation has gone
+out, the answer is a new quotation from the job, not a quiet edit. Refused in
+three places: the buttons offered, the service, and firestore.rules - where each
+allowed move names exactly the keys it may touch, so no write can carry a
+rewritten price along with a status change.
+
+**Recording the customer's answer**
+
+Staff record approval or rejection on the customer's behalf until the customer
+portal (Module 7) exists, so the record keeps the outcome, the timestamp, who
+entered it and any comment the customer gave. `estimates:approve` is required,
+and the rules check that the recorded name is the signed-in user's own.
+
+**Screens**
+
+- `/estimates` - directory with search across quotation number, job number,
+  customer, business name and mobile, an open/all/status filter, and paging
+- `/estimates/{id}` - the record, the actions this role and status allow, and
+  the quotation document itself
+- The quotation view prints cleanly from the browser (no PDF library): the
+  application shell is dropped by a print stylesheet
+- Job detail carries a "Create quotation" action and lists the quotations
+  already raised against that job
+
+**Permissions** (no change to the Module 2 matrix)
+
+- View: `estimates:view` - owner, admin, sales, accounts, viewer
+- Create: `estimates:create`; edit a draft: `estimates:edit`
+- Record a decision: `estimates:approve` - owner, admin, sales
+- Designer and production are denied at rule level, and the UI never asks
+
+**Deliberately excluded**
+
+GST and tax - Module 6 is tax-neutral, and taxation belongs to invoicing in
+Module 11. No invoice, payment or PDF-library work was added.
+
+## Next: Module 7 - Design Uploads & Approvals
 
 Scope to be confirmed before implementation.

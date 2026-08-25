@@ -3,6 +3,7 @@ import {
   DEMO_CUSTOMERS,
   DEMO_EMPLOYEES,
   DEMO_ENQUIRIES,
+  DEMO_ESTIMATES,
   DEMO_JOBS,
   DEMO_JOB_PRICING,
   DEMO_LOCATIONS,
@@ -12,6 +13,7 @@ import {
 import type { AuditEvent } from '@/features/audit/types';
 import type { Customer, CustomerInput } from '@/features/customers/types';
 import type { Enquiry } from '@/features/enquiries/types';
+import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
 import type { Job } from '@/features/jobs/types';
 import type { Location, LocationInput } from '@/features/locations/types';
@@ -55,6 +57,7 @@ export function resetDemoStore(): void {
   jobs = [...DEMO_JOBS];
   products = [...DEMO_PRODUCTS];
   jobPricing = new Map(DEMO_JOB_PRICING.map((entry) => [entry.jobId, entry]));
+  estimates = [...DEMO_ESTIMATES];
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
   auditEvents = [...DEMO_AUDIT_EVENTS];
@@ -288,5 +291,31 @@ export function updateDemoProduct(id: Id, changes: Partial<Product>, actorId: Id
     product.id === id
       ? { ...product, ...changes, updatedAt: new Date(), updatedBy: actorId }
       : product,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Module 6: estimates
+// ---------------------------------------------------------------------------
+
+let estimates: Estimate[] = [...DEMO_ESTIMATES];
+
+export function demoEstimates(): Estimate[] {
+  return [...estimates].sort((a, b) => b.estimateDate.getTime() - a.estimateDate.getTime());
+}
+
+export function demoEstimate(id: Id): Estimate | null {
+  return estimates.find((estimate) => estimate.id === id) ?? null;
+}
+
+export function addDemoEstimate(estimate: Omit<Estimate, 'id'>): Estimate {
+  const created: Estimate = { ...estimate, id: nextId('demo-estimate-new') };
+  estimates = [...estimates, created];
+  return created;
+}
+
+export function updateDemoEstimate(id: Id, changes: Partial<Estimate>): void {
+  estimates = estimates.map((estimate) =>
+    estimate.id === id ? { ...estimate, ...changes, updatedAt: new Date() } : estimate,
   );
 }
