@@ -16,6 +16,7 @@ import {
   UserCog,
   Users,
   Wallet,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -47,6 +48,7 @@ export const ROUTES = {
   users: '/settings/users',
   locations: '/settings/locations',
   products: '/settings/products',
+  workflowStages: '/settings/workflow-stages',
   roles: '/settings/roles',
   forbidden: '/forbidden',
 } as const;
@@ -144,10 +146,10 @@ export const NAV_SECTIONS: NavSection[] = [
         permission: 'designs:view',
       },
       {
-        label: 'Departments',
+        label: 'Production',
         path: ROUTES.production,
         icon: Factory,
-        enabled: false,
+        enabled: true,
         permission: 'production:view',
       },
       {
@@ -194,6 +196,13 @@ export const NAV_SECTIONS: NavSection[] = [
         label: 'Products & Rates',
         path: ROUTES.products,
         icon: Calculator,
+        enabled: true,
+        permission: 'settings:manage',
+      },
+      {
+        label: 'Production Stages',
+        path: ROUTES.workflowStages,
+        icon: Workflow,
         enabled: true,
         permission: 'settings:manage',
       },

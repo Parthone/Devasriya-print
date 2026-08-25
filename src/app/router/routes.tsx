@@ -13,6 +13,8 @@ import { PortalHomePage } from '@/features/customer-portal/pages/PortalHomePage'
 import { PortalLoginPage } from '@/features/customer-portal/pages/PortalLoginPage';
 import { PortalReviewPage } from '@/features/customer-portal/pages/PortalReviewPage';
 import { DesignsPage } from '@/features/designs/pages/DesignsPage';
+import { ProductionPage } from '@/features/production/pages/ProductionPage';
+import { WorkflowStagesPage } from '@/features/production/pages/WorkflowStagesPage';
 import { JobDetailPage } from '@/features/jobs/pages/JobDetailPage';
 import { JobsPage } from '@/features/jobs/pages/JobsPage';
 import { LocationsPage } from '@/features/locations/pages/LocationsPage';
@@ -164,6 +166,22 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requires={['designs:view']}>
             <DesignsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.production,
+        element: (
+          <ProtectedRoute requires={['production:view']}>
+            <ProductionPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: ROUTES.workflowStages,
+        element: (
+          <ProtectedRoute requires={['settings:manage']}>
+            <WorkflowStagesPage />
           </ProtectedRoute>
         ),
       },

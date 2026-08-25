@@ -2,6 +2,12 @@ import type { AuditEvent } from '@/features/audit/types';
 import type { CustomerAccount } from '@/features/customer-portal/types';
 import type { Customer } from '@/features/customers/types';
 import type { Design } from '@/features/designs/types';
+import type {
+  ProductionEvent,
+  ProductionRun,
+  ProductionTask,
+  WorkflowStage,
+} from '@/features/production/types';
 import type { Enquiry } from '@/features/enquiries/types';
 import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
@@ -794,5 +800,168 @@ export const DEMO_DESIGNS: Design[] = [
     createdBy: DESIGNER_UID,
     updatedAt: stamp(17),
     updatedBy: DESIGNER_UID,
+  },
+];
+
+// ── Module 8: the shop floor ───────────────────────────────────────────────
+
+const PRODUCTION_UID = 'demo-production';
+
+/** A small, believable set of stages for a printing and signage shop. */
+export const DEMO_WORKFLOW_STAGES: WorkflowStage[] = [
+  { name: 'Pre-press check', department: 'design', position: 0 },
+  { name: 'Printing', department: 'printing', position: 1 },
+  { name: 'Lamination & finishing', department: 'finishing', position: 2 },
+  { name: 'Installation', department: 'installation', position: 3 },
+].map((stage, index) => ({
+  ...stage,
+  id: `demo-stage-${String(index + 1)}`,
+  department: stage.department as WorkflowStage['department'],
+  isActive: true,
+  createdAt: stamp(1),
+  createdBy: DEMO_OWNER_UID,
+  updatedAt: stamp(1),
+  updatedBy: DEMO_OWNER_UID,
+}));
+
+function demoTask(
+  runId: string,
+  jobId: string,
+  index: number,
+  status: ProductionTask['status'],
+  extra: Partial<ProductionTask> = {},
+): ProductionTask {
+  const stage = DEMO_WORKFLOW_STAGES[index]!;
+  return {
+    id: `${runId}-task-${String(index + 1)}`,
+    runId,
+    jobId,
+    stageId: stage.id,
+    stageName: stage.name,
+    department: stage.department,
+    position: index,
+    status,
+    assignedToId: null,
+    assignedToName: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt: stamp(17),
+    createdBy: PRODUCTION_UID,
+    updatedAt: stamp(17),
+    updatedBy: PRODUCTION_UID,
+    ...extra,
+  };
+}
+
+/**
+ * Two runs, showing the two things the shop floor cares about: work moving
+ * through in order, and work that has stopped for a reason somebody wrote down.
+ */
+export const DEMO_PRODUCTION_RUNS: ProductionRun[] = [
+  {
+    id: 'demo-run-1',
+    jobId: 'demo-job-1',
+    jobNumber: 'JOB-2627-0001',
+    jobTitle: 'Diwali sale hoardings',
+    customerId: 'demo-customer-2',
+    customerName: 'Shreeji Traders',
+    status: 'in-progress',
+    // The version the customer approved, snapshotted when the run started.
+    approvedDesignId: 'demo-job-1-v2',
+    approvedDesignVersion: 2,
+    startedAt: stamp(17),
+    startedById: PRODUCTION_UID,
+    startedByName: 'Rakesh Meena',
+    completedAt: null,
+    tasks: [
+      demoTask('demo-run-1', 'demo-job-1', 0, 'completed', {
+        startedAt: stamp(17),
+        completedAt: stamp(18),
+        assignedToId: 'demo-designer',
+        assignedToName: 'Kavita Nair',
+      }),
+      demoTask('demo-run-1', 'demo-job-1', 1, 'in-progress', {
+        startedAt: stamp(18),
+        assignedToId: PRODUCTION_UID,
+        assignedToName: 'Rakesh Meena',
+      }),
+      demoTask('demo-run-1', 'demo-job-1', 2, 'pending'),
+      demoTask('demo-run-1', 'demo-job-1', 3, 'pending'),
+    ],
+    createdAt: stamp(17),
+    createdBy: PRODUCTION_UID,
+    updatedAt: stamp(18),
+    updatedBy: PRODUCTION_UID,
+  },
+  {
+    id: 'demo-run-2',
+    jobId: 'demo-job-3',
+    jobNumber: 'JOB-2627-0003',
+    jobTitle: 'Clinic reception signage',
+    customerId: 'demo-customer-1',
+    customerName: 'Ravi Kumar',
+    status: 'on-hold',
+    approvedDesignId: null,
+    approvedDesignVersion: null,
+    startedAt: stamp(15),
+    startedById: PRODUCTION_UID,
+    startedByName: 'Rakesh Meena',
+    completedAt: null,
+    tasks: [
+      demoTask('demo-run-2', 'demo-job-3', 0, 'completed', {
+        startedAt: stamp(15),
+        completedAt: stamp(15),
+      }),
+      demoTask('demo-run-2', 'demo-job-3', 1, 'on-hold', {
+        startedAt: stamp(16),
+        holdReason: 'Waiting for the 8 ft vinyl roll to arrive from the supplier.',
+      }),
+      demoTask('demo-run-2', 'demo-job-3', 2, 'pending'),
+      demoTask('demo-run-2', 'demo-job-3', 3, 'pending'),
+    ],
+    createdAt: stamp(15),
+    createdBy: PRODUCTION_UID,
+    updatedAt: stamp(16),
+    updatedBy: PRODUCTION_UID,
+  },
+];
+
+export const DEMO_PRODUCTION_EVENTS: ProductionEvent[] = [
+  {
+    id: 'demo-prod-event-1',
+    runId: 'demo-run-1',
+    taskId: null,
+    jobId: 'demo-job-1',
+    action: 'run-started',
+    at: stamp(17),
+    byId: PRODUCTION_UID,
+    byName: 'Rakesh Meena',
+  },
+  {
+    id: 'demo-prod-event-2',
+    runId: 'demo-run-1',
+    taskId: 'demo-run-1-task-1',
+    jobId: 'demo-job-1',
+    action: 'stage-completed',
+    stageName: 'Pre-press check',
+    fromStatus: 'in-progress',
+    toStatus: 'completed',
+    at: stamp(18),
+    byId: 'demo-designer',
+    byName: 'Kavita Nair',
+  },
+  {
+    id: 'demo-prod-event-3',
+    runId: 'demo-run-2',
+    taskId: 'demo-run-2-task-2',
+    jobId: 'demo-job-3',
+    action: 'stage-held',
+    stageName: 'Printing',
+    fromStatus: 'in-progress',
+    toStatus: 'on-hold',
+    reason: 'Waiting for the 8 ft vinyl roll to arrive from the supplier.',
+    at: stamp(16),
+    byId: PRODUCTION_UID,
+    byName: 'Rakesh Meena',
   },
 ];

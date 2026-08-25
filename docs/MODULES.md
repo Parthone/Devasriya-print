@@ -546,3 +546,64 @@ explicitly.
 
 No data migration tooling. The Firebase data was fictional emulator data;
 `npm run seed:supabase` recreates a richer version in seconds.
+
+## Module 8 - Department Workflow (delivered)
+
+Approved work goes to the shop floor. Which stages exist is the shop's own
+decision, so it is data the owner edits rather than a sequence baked into the
+software.
+
+**The four invariants**
+
+- **Work moves in order.** A stage cannot start until the one in front of it is
+  finished or skipped. Enforced in the RPC, and the UI does not offer a Start
+  button the database would refuse.
+- **Stopping always says why.** Holding or skipping a stage requires a reason.
+  The rule lives on the table as a CHECK constraint and a trigger, so going
+  around the RPC with a direct update does not get past it - there is a test
+  that tries exactly that.
+- **The history is append-only.** `production_events` has no update grant and no
+  delete grant for anybody. What happened on the shop floor is not something
+  that gets tidied up afterwards.
+- **The artwork is snapshotted.** A run records the approved design and version
+  it was started against, so a revision approved next week cannot change the
+  answer to "what did we print".
+
+**The state machine**
+
+    pending      -> ready, skipped
+    ready        -> in-progress, skipped
+    in-progress  -> on-hold, completed, skipped
+    on-hold      -> in-progress, skipped
+    completed / skipped -> nothing further
+
+Skipping ahead is deliberately allowed from `pending`: knowing up front that a
+job needs no lamination is a normal way to work.
+
+**Job status follows the shop floor**
+
+`app.sync_job_status` derives the job's status from its stages: anything running
+makes the job in-progress, anything held makes it on-hold, everything settled
+makes it ready. Handing the work over stays a separate decision - a delivered or
+cancelled job is never touched by production.
+
+That function is the only `SECURITY DEFINER` in the module, and deliberately so:
+a designer holds `production:update` but not `jobs:edit`, and should still be
+able to complete a stage. The job's status is a derived value, so the database
+derives it rather than the shop floor being granted the right to write job
+records directly.
+
+**Permissions** (no change to the Module 2 matrix)
+
+- See the board: `production:view` - everyone except accounts
+- Move work along: `production:update` - owner, admin, designer, production
+- Put a name against a stage: `jobs:assign` - owner and admin. Column grants
+  cannot express "these columns need a different permission from those ones",
+  because permissive policies OR their checks together, so the assignment rule
+  is a trigger instead.
+- Configure the stages: `settings:manage` - owner only
+
+**Deliberately excluded**
+
+Workload and capacity assignment - that is Module 9. This module records who is
+doing a stage; it does not decide who should be.

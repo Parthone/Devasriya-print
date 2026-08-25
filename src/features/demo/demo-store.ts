@@ -3,6 +3,9 @@ import {
   DEMO_CUSTOMERS,
   DEMO_CUSTOMER_ACCOUNT,
   DEMO_DESIGNS,
+  DEMO_PRODUCTION_EVENTS,
+  DEMO_PRODUCTION_RUNS,
+  DEMO_WORKFLOW_STAGES,
   DEMO_EMPLOYEES,
   DEMO_ENQUIRIES,
   DEMO_ESTIMATES,
@@ -16,6 +19,18 @@ import type { AuditEvent } from '@/features/audit/types';
 import type { CustomerAccount } from '@/features/customer-portal/types';
 import type { Customer, CustomerInput } from '@/features/customers/types';
 import type { Design } from '@/features/designs/types';
+import type { JobStatus } from '@/features/jobs/types';
+import {
+  canTransition,
+  isSettled,
+  requiresReason,
+  type ProductionEvent,
+  type ProductionRun,
+  type ProductionStatus,
+  type ProductionTask,
+  type WorkflowStage,
+  type WorkflowStageInput,
+} from '@/features/production/types';
 import type { Enquiry } from '@/features/enquiries/types';
 import type { Estimate } from '@/features/estimates/types';
 import type { JobPricingDocument } from '@/features/jobs/pricing-types';
@@ -24,7 +39,7 @@ import type { Location, LocationInput } from '@/features/locations/types';
 import type { Product, ProductInput } from '@/features/products/types';
 import type { JobPricing } from '@/lib/pricing';
 import type { UserProfile } from '@/types/auth';
-import type { Id } from '@/types/common';
+import { AppError, type Id } from '@/types/common';
 
 /**
  * In-memory store behind demo mode.
@@ -35,6 +50,9 @@ import type { Id } from '@/types/common';
  */
 let customers: Customer[] = [...DEMO_CUSTOMERS];
 let designs: Design[] = [...DEMO_DESIGNS];
+let workflowStages: WorkflowStage[] = [...DEMO_WORKFLOW_STAGES];
+let productionRuns: ProductionRun[] = [...DEMO_PRODUCTION_RUNS];
+let productionEvents: ProductionEvent[] = [...DEMO_PRODUCTION_EVENTS];
 let customerAccounts: CustomerAccount[] = [DEMO_CUSTOMER_ACCOUNT];
 let employees: UserProfile[] = [...DEMO_EMPLOYEES];
 let auditEvents: AuditEvent[] = [...DEMO_AUDIT_EVENTS];
@@ -79,6 +97,9 @@ export function resetDemoStore(): void {
   jobPricing = new Map(DEMO_JOB_PRICING.map((entry) => [entry.jobId, entry]));
   estimates = [...DEMO_ESTIMATES];
   designs = [...DEMO_DESIGNS];
+  workflowStages = [...DEMO_WORKFLOW_STAGES];
+  productionRuns = [...DEMO_PRODUCTION_RUNS];
+  productionEvents = [...DEMO_PRODUCTION_EVENTS];
   customerAccounts = [DEMO_CUSTOMER_ACCOUNT];
   customers = [...DEMO_CUSTOMERS];
   employees = [...DEMO_EMPLOYEES];
@@ -384,4 +405,319 @@ export function setDemoCustomerAccountActive(uid: Id, isActive: boolean, actorId
       ? { ...account, isActive, updatedAt: new Date(), updatedBy: actorId }
       : account,
   );
+}
+
+// ── Module 8: production ───────────────────────────────────────────────────
+
+export function demoWorkflowStages(): WorkflowStage[] {
+  return [...workflowStages].sort((a, b) => a.position - b.position);
+}
+
+export function addDemoStage(input: WorkflowStageInput, actorId: Id): WorkflowStage {
+  const now = new Date();
+  const stage: WorkflowStage = {
+    ...input,
+    id: nextId('demo-stage'),
+    createdAt: now,
+    createdBy: actorId,
+    updatedAt: now,
+    updatedBy: actorId,
+  };
+  workflowStages = [...workflowStages, stage];
+  return stage;
+}
+
+export function updateDemoStage(id: Id, input: WorkflowStageInput, actorId: Id): void {
+  workflowStages = workflowStages.map((stage) =>
+    stage.id === id ? { ...stage, ...input, updatedAt: new Date(), updatedBy: actorId } : stage,
+  );
+}
+
+export function demoProductionRuns(): ProductionRun[] {
+  return [...productionRuns].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+}
+
+export function demoProductionEvents(runId: Id): ProductionEvent[] {
+  return productionEvents
+    .filter((event) => event.runId === runId)
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+}
+
+function recordDemoProductionEvent(event: Omit<ProductionEvent, 'id'>): void {
+  productionEvents = [{ ...event, id: nextId('demo-prod-event') }, ...productionEvents];
+}
+
+/**
+ * Sends a demo job to production.
+ *
+ * The same shape as the real transaction: a run, one task per active stage,
+ * the first ready and the rest waiting, and the job moved to in-progress.
+ */
+export function startDemoRun(jobId: Id, actor: { uid: Id; name: string }): ProductionRun {
+  const job = demoJob(jobId);
+  if (!job) throw new AppError('not-found', 'That job no longer exists.');
+  if (productionRuns.some((run) => run.jobId === jobId)) {
+    throw new AppError('conflict', 'This job is already in production.');
+  }
+
+  const stages = demoWorkflowStages().filter((stage) => stage.isActive);
+  if (stages.length === 0) {
+    throw new AppError('invalid-input', 'No production stages are set up yet.');
+  }
+
+  const now = new Date();
+  const runId = nextId('demo-run');
+  const approved = demoDesignsForJob(jobId).find((design) => design.status === 'approved');
+
+  const tasks: ProductionTask[] = stages.map((stage, index) => ({
+    id: nextId('demo-task'),
+    runId,
+    jobId,
+    stageId: stage.id,
+    stageName: stage.name,
+    department: stage.department,
+    position: index,
+    status: index === 0 ? 'ready' : 'pending',
+    assignedToId: null,
+    assignedToName: null,
+    startedAt: null,
+    completedAt: null,
+    createdAt: now,
+    createdBy: actor.uid,
+    updatedAt: now,
+    updatedBy: actor.uid,
+  }));
+
+  const run: ProductionRun = {
+    id: runId,
+    jobId,
+    jobNumber: job.jobNumber,
+    jobTitle: job.title,
+    customerId: job.customerId,
+    customerName: job.customerName,
+    status: 'in-progress',
+    approvedDesignId: approved?.id ?? null,
+    approvedDesignVersion: approved?.version ?? null,
+    startedAt: now,
+    startedById: actor.uid,
+    startedByName: actor.name,
+    completedAt: null,
+    tasks,
+    createdAt: now,
+    createdBy: actor.uid,
+    updatedAt: now,
+    updatedBy: actor.uid,
+  };
+
+  productionRuns = [run, ...productionRuns];
+  recordDemoProductionEvent({
+    runId,
+    taskId: null,
+    jobId,
+    action: 'run-started',
+    at: now,
+    byId: actor.uid,
+    byName: actor.name,
+  });
+  updateDemoJob(jobId, { status: 'in-progress', updatedBy: actor.uid });
+  return run;
+}
+
+function syncDemoJobStatus(jobId: Id, actorId: Id): void {
+  const tasks = productionRuns.find((run) => run.jobId === jobId)?.tasks ?? [];
+  if (tasks.length === 0) return;
+
+  const job = demoJob(jobId);
+  if (!job || job.status === 'delivered' || job.status === 'cancelled') return;
+
+  const settled = tasks.filter((task) => isSettled(task.status)).length;
+  const next: JobStatus =
+    settled === tasks.length
+      ? 'ready'
+      : tasks.some((task) => task.status === 'on-hold')
+        ? 'on-hold'
+        : 'in-progress';
+
+  if (next !== job.status) updateDemoJob(jobId, { status: next, updatedBy: actorId });
+}
+
+/**
+ * Moves a demo stage along, unlocking the next one exactly as the database does.
+ *
+ * The transition table and the reason requirement are checked here too, so the
+ * demo refuses the same moves the real system refuses - a demo that allows what
+ * production forbids teaches the wrong thing.
+ */
+export function advanceDemoTask(
+  task: ProductionTask,
+  toStatus: ProductionStatus,
+  reason: string | undefined,
+  actor: { uid: Id; name: string },
+): ProductionTask {
+  const run = productionRuns.find((candidate) => candidate.id === task.runId);
+  if (!run) throw new AppError('not-found', 'That stage is not available.');
+
+  const current = run.tasks.find((candidate) => candidate.id === task.id);
+  if (!current) throw new AppError('not-found', 'That stage is not available.');
+
+  if (!canTransition(current.status, toStatus)) {
+    throw new AppError(
+      'conflict',
+      `A stage that is ${current.status.replace(/-/g, ' ')} cannot become ${toStatus.replace(/-/g, ' ')}.`,
+    );
+  }
+
+  const trimmed = reason?.trim();
+  if (requiresReason(toStatus) && !trimmed) {
+    throw new AppError(
+      'invalid-input',
+      toStatus === 'on-hold'
+        ? 'Say why this stage is being put on hold.'
+        : 'Say why this stage is being skipped.',
+    );
+  }
+
+  if (toStatus === 'in-progress' && current.status === 'ready') {
+    const blocked = run.tasks.some(
+      (other) => other.position < current.position && !isSettled(other.status),
+    );
+    if (blocked) {
+      throw new AppError('conflict', 'An earlier stage is still open. Finish that one first.');
+    }
+  }
+
+  const now = new Date();
+  const updated: ProductionTask = {
+    ...current,
+    status: toStatus,
+    startedAt: toStatus === 'in-progress' ? (current.startedAt ?? now) : current.startedAt,
+    completedAt: isSettled(toStatus) ? now : current.completedAt,
+    ...(toStatus === 'on-hold' ? { holdReason: trimmed } : {}),
+    ...(toStatus === 'skipped' ? { skipReason: trimmed } : {}),
+    updatedAt: now,
+    updatedBy: actor.uid,
+  };
+
+  let tasks = run.tasks.map((candidate) => (candidate.id === updated.id ? updated : candidate));
+
+  recordDemoProductionEvent({
+    runId: run.id,
+    taskId: updated.id,
+    jobId: run.jobId,
+    action:
+      toStatus === 'in-progress'
+        ? current.status === 'on-hold'
+          ? 'stage-resumed'
+          : 'stage-started'
+        : toStatus === 'on-hold'
+          ? 'stage-held'
+          : toStatus === 'completed'
+            ? 'stage-completed'
+            : 'stage-skipped',
+    stageName: updated.stageName,
+    fromStatus: current.status,
+    toStatus,
+    ...(trimmed ? { reason: trimmed } : {}),
+    at: now,
+    byId: actor.uid,
+    byName: actor.name,
+  });
+
+  if (isSettled(toStatus)) {
+    const next = [...tasks]
+      .sort((a, b) => a.position - b.position)
+      .find((candidate) => candidate.status === 'pending');
+    if (next) {
+      tasks = tasks.map((candidate) =>
+        candidate.id === next.id ? { ...candidate, status: 'ready' as const } : candidate,
+      );
+      recordDemoProductionEvent({
+        runId: run.id,
+        taskId: next.id,
+        jobId: run.jobId,
+        action: 'stage-unlocked',
+        stageName: next.stageName,
+        fromStatus: 'pending',
+        toStatus: 'ready',
+        at: now,
+        byId: actor.uid,
+        byName: actor.name,
+      });
+    }
+  }
+
+  const allSettled = tasks.every((candidate) => isSettled(candidate.status));
+  productionRuns = productionRuns.map((candidate) =>
+    candidate.id === run.id
+      ? {
+          ...candidate,
+          tasks,
+          status: allSettled
+            ? ('completed' as const)
+            : tasks.some((entry) => entry.status === 'on-hold')
+              ? ('on-hold' as const)
+              : ('in-progress' as const),
+          completedAt: allSettled ? now : candidate.completedAt,
+          updatedAt: now,
+          updatedBy: actor.uid,
+        }
+      : candidate,
+  );
+
+  if (allSettled) {
+    recordDemoProductionEvent({
+      runId: run.id,
+      taskId: null,
+      jobId: run.jobId,
+      action: 'run-completed',
+      at: now,
+      byId: actor.uid,
+      byName: actor.name,
+    });
+  }
+
+  syncDemoJobStatus(run.jobId, actor.uid);
+  return updated;
+}
+
+export function assignDemoTask(
+  task: ProductionTask,
+  assignee: { id: Id; name: string } | null,
+  actor: { uid: Id; name: string },
+): ProductionTask {
+  const now = new Date();
+  let updated: ProductionTask = { ...task };
+
+  productionRuns = productionRuns.map((run) =>
+    run.id !== task.runId
+      ? run
+      : {
+          ...run,
+          tasks: run.tasks.map((candidate) => {
+            if (candidate.id !== task.id) return candidate;
+            updated = {
+              ...candidate,
+              assignedToId: assignee?.id ?? null,
+              assignedToName: assignee?.name ?? null,
+              updatedAt: now,
+              updatedBy: actor.uid,
+            };
+            return updated;
+          }),
+        },
+  );
+
+  recordDemoProductionEvent({
+    runId: task.runId,
+    taskId: task.id,
+    jobId: task.jobId,
+    action: 'stage-assigned',
+    stageName: task.stageName,
+    ...(assignee ? { reason: assignee.name } : {}),
+    at: now,
+    byId: actor.uid,
+    byName: actor.name,
+  });
+
+  return updated;
 }

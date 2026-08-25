@@ -149,14 +149,17 @@ export const MODULES: ModuleDefinition[] = [
     index: 8,
     id: 'production',
     title: 'Department Workflow',
-    description: 'Department-wise production stages and job movement.',
-    status: 'planned',
+    description:
+      'Configurable production stages, sequential work on the shop floor, and an append-only history.',
+    status: 'done',
     route: ROUTES.production,
     scope: [
-      'Configurable departments and stages',
-      'Job movement between departments',
-      'Stage-level status and remarks',
-      'Rework and hold handling',
+      'Stages configured by the owner, in the order work moves through them',
+      'One production run per job, one task per stage',
+      'Sequential flow: finishing a stage unlocks the next',
+      'Holding or skipping a stage always records why',
+      'Job status kept in step with the shop floor',
+      'The approved artwork snapshotted when the run starts',
     ],
   },
   {

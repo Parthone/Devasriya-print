@@ -624,6 +624,60 @@ access to the job record, so there is no denormalised field that can drift out
 of step with the decision that set it. Approving a version supersedes any
 earlier approval, so a job never has two.
 
+## Production and the shop floor
+
+Approved work goes to the shop floor as a **production run**: one run per job,
+one task per stage, worked through in order.
+
+Which stages exist is the shop's own decision, edited under
+**Settings > Production Stages** (`settings:manage`, owner only). No two print
+shops run the same sequence, and a shop's sequence changes as it grows, so this
+is data rather than something baked into the software. Stages are switched off
+rather than deleted - every task snapshots the name it was made with, so a job
+that went through "Lamination" last month still says so.
+
+### The four rules
+
+- **Work moves in order.** A stage cannot start until the one in front of it is
+  finished or skipped. The screen does not offer a Start button the database
+  would refuse.
+- **Stopping always says why.** Holding or skipping a stage needs a reason. That
+  rule is a CHECK constraint and a trigger on the table, not just a dialog - a
+  direct update without a reason is refused too, and there is a test that tries.
+- **The history is append-only.** `production_events` has no update grant and no
+  delete grant, for anybody.
+- **The artwork is snapshotted.** A run records the approved design and version
+  it started against, so a revision approved next week cannot change what this
+  run was worked from.
+
+### Stage states
+
+    pending      -> ready, skipped
+    ready        -> in-progress, skipped
+    in-progress  -> on-hold, completed, skipped
+    on-hold      -> in-progress, skipped
+    completed / skipped -> nothing further
+
+Skipping straight from `pending` is deliberate: knowing up front that a job
+needs no lamination is a normal way to work.
+
+### The job keeps up on its own
+
+A job's status is derived from its stages - anything running makes it
+in-progress, anything held makes it on-hold, everything settled makes it ready.
+Handing the work over is a separate decision, and a delivered or cancelled job
+is never touched by production.
+
+### Who can do what
+
+- **See the board** (`/production`): `production:view` - everyone but accounts.
+  Grouped by what needs doing next, not by percentage complete: "on hold" is the
+  bucket that needs a person.
+- **Move work along:** `production:update` - owner, admin, designer, production.
+- **Put a name against a stage:** `jobs:assign` - owner and admin. Doing the
+  work and handing it out are different permissions.
+- **Configure the stages:** `settings:manage` - owner only.
+
 ## Backend architecture
 
 The frontend is a React + TypeScript single page application. **Supabase is the
